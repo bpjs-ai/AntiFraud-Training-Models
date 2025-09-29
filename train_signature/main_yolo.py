@@ -16,12 +16,12 @@ environment variable.  See the module‑level docstring in
 import sys
 from pathlib import Path
 
-from parse_args import parse_args
-from download_dataset import download_dataset
-from train_model import train_model
-from validate_model import validate_model
-from run_inference import run_inference
-from export_model import export_model
+from .parse_args import parse_args
+from .download_dataset import download_dataset
+from .train_model import train_model
+from .validate_model import validate_model
+from .run_inference import run_inference
+from .export_model import export_model
 
 
 def main() -> None:
