@@ -7,4 +7,6 @@
 *.txt
 *.onnx
 *.log
+*.csv
+.env
 
