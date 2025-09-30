@@ -3,6 +3,7 @@ import os
 import json
 import torch
 import torch.nn as nn
+from datetime import datetime
 
 from train_classifier.config import TrainConfig
 from train_classifier.dataset import (
@@ -95,9 +96,22 @@ def main():
     if not os.path.isabs(cfg.label_map_path):
         cfg.label_map_path = os.path.join(cfg.output_dir, os.path.basename(cfg.label_map_path))
 
-    best_onnx_name = os.path.basename(getattr(cfg, "best_onnx_model_path", "best_model.onnx"))
-    if not os.path.isabs(getattr(cfg, "best_onnx_model_path", "")):
-        cfg.best_onnx_model_path = os.path.join(cfg.output_dir, best_onnx_name)
+    best_onnx_raw_path = getattr(cfg, "best_onnx_model_path", "full_model.onnx")
+    best_onnx_name = os.path.basename(best_onnx_raw_path)
+    if os.path.isabs(best_onnx_raw_path):
+        onnx_dir = os.path.dirname(best_onnx_raw_path) or cfg.output_dir
+    else:
+        onnx_dir = cfg.output_dir
+
+    timestamp = datetime.now().strftime("%Y%m%d%H")
+    stem, ext = os.path.splitext(best_onnx_name)
+    if not stem:
+        stem = "full_model"
+    if not ext:
+        ext = ".onnx"
+
+    os.makedirs(onnx_dir, exist_ok=True)
+    cfg.best_onnx_model_path = os.path.join(onnx_dir, f"{stem}_{timestamp}{ext}")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
