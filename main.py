@@ -174,15 +174,16 @@ def training_classifier(args: argparse.Namespace, logger: logging.Logger) -> boo
     """Execute classifier training pipeline."""
     logger.info("🚀 Starting Classifier Training Pipeline")
     print("\n=== Downloading Classifier Dataset ===")
-    # try:
-    #     classifier_path = download_dataset(
-    #         dataset_type="classifier",
-    #         s3_prefix="dataset/classifier/",  # Replace with actual S3 prefix
-    #         local_base_dir=""  # Current directory
-    #     )
-    #     print(f"Classifier dataset downloaded to: {classifier_path}")
-    # except Exception as e:
-    #     print(f"Error downloading classifier dataset: {e}")
+    # jangan dihapus
+    try:
+        classifier_path = download_dataset(
+            dataset_type="classifier",
+            s3_prefix="dataset/classifier/",  # Replace with actual S3 prefix
+            local_base_dir=""  # Current directory
+        )
+        print(f"Classifier dataset downloaded to: {classifier_path}")
+    except Exception as e:
+        print(f"Error downloading classifier dataset: {e}")
     try:
         classifier_args = []
 
@@ -230,15 +231,15 @@ def training_signature(args: argparse.Namespace, logger: logging.Logger) -> bool
 
     print("\n=== Downloading Signature Dataset ===")
     # jangan dihapus
-    # try:
-    #     signature_path = download_dataset(
-    #         dataset_type="signature",
-    #         s3_prefix="dataset/signature/",  # Replace with actual S3 prefix
-    #         local_base_dir="."  # Current directory
-    #     )
-    #     print(f"Signature dataset downloaded to: {signature_path}")
-    # except Exception as e:
-    #     print(f"Error downloading signature dataset: {e}")
+    try:
+        signature_path = download_dataset(
+            dataset_type="signature",
+            s3_prefix="dataset/signature/",  # Replace with actual S3 prefix
+            local_base_dir="."  # Current directory
+        )
+        print(f"Signature dataset downloaded to: {signature_path}")
+    except Exception as e:
+        print(f"Error downloading signature dataset: {e}")
     
     try:
         
