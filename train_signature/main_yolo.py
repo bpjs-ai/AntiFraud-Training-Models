@@ -60,7 +60,7 @@ def main() -> None:
     validate_model(model, data_yaml, out_path)
 
     # Inference on test images
-    test_images = dataset_dir / "test" / "images"
+    test_images = "dataset" / "test" / "images"
     if test_images.exists() and any(test_images.iterdir()):
         print("\nRunning inference on test images…")
         run_inference(model, test_images, out_path, conf=0.25)

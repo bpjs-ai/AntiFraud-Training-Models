@@ -80,6 +80,14 @@ def main():
     cfg = load_config(args)
 
     os.makedirs(cfg.output_dir, exist_ok=True)
+    # Backward compatibility for older configs
+    if not hasattr(cfg, "best_state_dict_path"):
+        legacy_best = getattr(cfg, "best_model_path", os.path.join(cfg.output_dir, "best_model.pt"))
+        cfg.best_state_dict_path = legacy_best
+
+    if not hasattr(cfg, "best_onnx_model_path"):
+        cfg.best_onnx_model_path = os.path.join(cfg.output_dir, "best_model.onnx")
+
     if not os.path.isabs(cfg.best_state_dict_path):
         cfg.best_state_dict_path = os.path.join(
             cfg.output_dir, os.path.basename(cfg.best_state_dict_path)
