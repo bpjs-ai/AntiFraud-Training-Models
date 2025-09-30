@@ -27,7 +27,7 @@ from train_signature.download_dataset import download_dataset
 
 def setup_logging(output_dir: Path) -> logging.Logger:
     """Setup logging configuration."""
-    log_file = output_dir / f"pipeline_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+    log_file = output_dir / f"pipeline_{datetime.now().strftime('%Y%m%d%H')}.log"
     
     logging.basicConfig(
         level=logging.INFO,
@@ -188,7 +188,7 @@ def training_classifier(args: argparse.Namespace, logger: logging.Logger) -> boo
         classifier_args = []
         
         # Add output directory
-        classifier_output_dir = Path(args.output_dir) / "classifier" / datetime.now().strftime('%Y%m%d_%H%M%S')
+        classifier_output_dir = Path(args.output_dir) / "classifier" / datetime.now().strftime('%Y%m%d%H')
         classifier_args.extend(["--output_dir", str(classifier_output_dir)])
         
         # Add config if provided
@@ -243,7 +243,7 @@ def training_signature(args: argparse.Namespace, logger: logging.Logger) -> bool
         signature_args = []
         
         # Add output directory
-        signature_output_dir = Path(args.output_dir) / "signature" / datetime.now().strftime('%Y%m%d_%H%M%S')
+        signature_output_dir = Path(args.output_dir) / "signature" / datetime.now().strftime('%Y%m%d%H')
         signature_args.extend(["--out-dir", str(signature_output_dir)])
         
         # Add signature specific arguments

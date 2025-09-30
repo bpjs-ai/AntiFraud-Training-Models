@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from typing import Tuple
+from datetime import datetime
 
 
 @dataclass
@@ -34,8 +35,8 @@ class TrainConfig:
 
     # Output
     output_dir: str = "outputs"
-    best_state_dict_path: str = "outputs/best_model.pt"
-    label_map_path: str = "outputs/label2id.json"
-    best_onnx_model_path: str = "outputs/best_model.onnx"
+    best_state_dict_path: str = "outputs/classifier/state_dict{timestamp}.pt"
+    label_map_path: str = "outputs/classifier/label2id.json"
+    best_onnx_model_path: str = "outputs/classifier/full_model_{timestamp}.onnx"
 
 
