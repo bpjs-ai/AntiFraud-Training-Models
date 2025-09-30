@@ -1,0 +1,34 @@
+services:
+  # Server (GPU) - enable with: docker compose --profile gpu up
+  training-app-gpu:
+    profiles:
+      - gpu
+    build:
+      context: .
+      dockerfile: Dockerfile.training
+      target: runtime-gpu
+    image: antifraud-training-app
+    container_name: antifraud_training_gpu
+    restart: unless-stopped
+    command: python main.py --pipeline classifier --dataset-dir /app/dataset --output_dir /app/outputs
+    volumes:
+      - ./dataset:/app/dataset
+      - ./outputs:/app/outputs
+      - ./paddle_models:/app/paddle_models
+    env_file:
+      - .env
+    environment:
+      - PADDLEOCR_HOME=/app/.paddleocr
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+
+    # Note: GPU on Compose depends on Docker host support.
+    # Prefer: docker run --gpus all ... or run on Kubernetes.
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
