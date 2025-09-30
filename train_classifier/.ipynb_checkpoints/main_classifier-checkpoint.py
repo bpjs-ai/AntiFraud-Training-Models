@@ -3,7 +3,9 @@ import os
 import json
 import torch
 import torch.nn as nn
+from datetime import datetime
 
+from utils.s3_utils import S3Handler
 from train_classifier.config import TrainConfig
 from train_classifier.dataset import (
     build_dataloaders,
@@ -30,8 +32,8 @@ def parse_args():
     parser.add_argument("--config", type=str, default=None, help="Path to JSON config file")
 
     # Allow override via CLI
-    parser.add_argument("--data_csv_path", type=str, default=None)
-    parser.add_argument("--image_root_dir", type=str, default=None)
+    parser.add_argument("--data_csv_path", type=str, default="dataset/classifier/data.csv")
+    parser.add_argument("--image_root_dir", type=str, default="dataset/classifier")
     parser.add_argument("--val_size", type=float, default=None)
     parser.add_argument("--epochs", type=int, default=None)
     parser.add_argument("--batch_size", type=int, default=None)
@@ -78,8 +80,40 @@ def load_config(args) -> TrainConfig:
 def main():
     args = parse_args()
     cfg = load_config(args)
+    s3_handler = S3Handler()
 
     os.makedirs(cfg.output_dir, exist_ok=True)
+    # Backward compatibility for older configs
+    if not hasattr(cfg, "best_state_dict_path"):
+        legacy_best = getattr(cfg, "best_model_path", os.path.join(cfg.output_dir, "best_model.pt"))
+        cfg.best_state_dict_path = legacy_best
+
+    if not hasattr(cfg, "best_onnx_model_path"):
+        cfg.best_onnx_model_path = os.path.join(cfg.output_dir, "best_model.onnx")
+
+    if not os.path.isabs(cfg.best_state_dict_path):
+        cfg.best_state_dict_path = os.path.join(
+            cfg.output_dir, os.path.basename(cfg.best_state_dict_path)
+        )
+    if not os.path.isabs(cfg.label_map_path):
+        cfg.label_map_path = os.path.join(cfg.output_dir, os.path.basename(cfg.label_map_path))
+
+    best_onnx_raw_path = getattr(cfg, "best_onnx_model_path", "full_model.onnx")
+    best_onnx_name = os.path.basename(best_onnx_raw_path)
+    if os.path.isabs(best_onnx_raw_path):
+        onnx_dir = os.path.dirname(best_onnx_raw_path) or cfg.output_dir
+    else:
+        onnx_dir = cfg.output_dir
+
+    timestamp = datetime.now().strftime("%Y%m%d%H")
+    stem, ext = os.path.splitext(best_onnx_name)
+    if not stem:
+        stem = "full_model"
+    if not ext:
+        ext = ".onnx"
+
+    os.makedirs(onnx_dir, exist_ok=True)
+    cfg.best_onnx_model_path = os.path.join(onnx_dir, f"{stem}_{timestamp}{ext}")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -163,7 +197,8 @@ def main():
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             early_stop_counter = 0
-            torch.save(model.state_dict(), cfg.best_model_path)
+            torch.save(model.state_dict(), cfg.best_state_dict_path)
+            print(f"Saved improved state dict to {cfg.best_state_dict_path}")
         else:
             early_stop_counter += 1
             if early_stop_counter >= cfg.early_stop_patience:
@@ -174,11 +209,36 @@ def main():
     save_label_mapping(label_to_id, cfg.label_map_path)
 
     print("Training completed.")
-    # Export ke ONNX pakai batch asli dari val_loader
-    model.eval()
-    with torch.no_grad():
-        example_batch = next(iter(val_loader))
 
+    # Reload the best checkpoint before exporting to ensure ONNX uses the best weights
+    if os.path.exists(cfg.best_state_dict_path):
+        model.load_state_dict(torch.load(cfg.best_state_dict_path, map_location=device))
+        model.to(device)
+    else:
+        print(
+            f"Warning: best model checkpoint not found at {cfg.best_state_dict_path}. "
+            "Skipping ONNX export."
+        )
+        return
+
+    model.eval()
+
+    # Try to grab an example batch from the validation loader, fallback to the training loader
+    example_batch = None
+    for loader in (val_loader, train_loader):
+        if loader is None:
+            continue
+        try:
+            example_batch = next(iter(loader))
+            break
+        except StopIteration:
+            continue
+
+    if example_batch is None:
+        print("Warning: Unable to retrieve a batch for ONNX export. Skipping export.")
+        return
+
+    with torch.no_grad():
         example_input = (
             example_batch["input_ids"].to(device),
             example_batch["attention_mask"].to(device),
@@ -190,15 +250,16 @@ def main():
             example_input,
             cfg.best_onnx_model_path,
             input_names=["input_ids", "attention_mask", "pixel_values"],
-            output_names=["output"],
+            output_names=["logits"],
             dynamic_axes={
-                "input_ids": {0: "batch_size"},
-                "attention_mask": {0: "batch_size"},
+                "input_ids": {0: "batch_size", 1: "sequence"},
+                "attention_mask": {0: "batch_size", 1: "sequence"},
                 "pixel_values": {0: "batch_size"},
-                "output": {0: "batch_size"}
+                "logits": {0: "batch_size"}
             },
-            opset_version=17
+            opset_version=18,
         )
+    s3_handler.upload_file(cfg.best_onnx_model_path, f"outputs_training/{os.path.basename(cfg.best_onnx_model_path)}")
     print(f"✅ ONNX model saved at {cfg.best_onnx_model_path}")
 
 

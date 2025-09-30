@@ -32,8 +32,8 @@ def parse_args():
     parser.add_argument("--config", type=str, default=None, help="Path to JSON config file")
 
     # Allow override via CLI
-    parser.add_argument("--data_csv_path", type=str, default=None)
-    parser.add_argument("--image_root_dir", type=str, default=None)
+    parser.add_argument("--data_csv_path", type=str, default="dataset/classifier/data.csv")
+    parser.add_argument("--image_root_dir", type=str, default="dataset/classifier")
     parser.add_argument("--val_size", type=float, default=None)
     parser.add_argument("--epochs", type=int, default=None)
     parser.add_argument("--batch_size", type=int, default=None)
