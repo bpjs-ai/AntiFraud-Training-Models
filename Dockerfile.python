@@ -1,0 +1,99 @@
+
+# Stage 1: Base Python environment
+FROM python:3.11-slim AS base
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    TZ=Asia/Jakarta
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Essential build tools
+    build-essential \
+    gcc \
+    g++ \
+    make \
+    cmake \
+    # System libraries untuk ML frameworks
+    libgl1-mesa-dri \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    libgcc-s1 \
+    # OpenCV dependencies
+    libopencv-dev \
+    python3-opencv \
+    # Image processing libraries
+    libjpeg-dev \
+    libpng-dev \
+    libtiff-dev \
+    libavcodec-dev \
+    libavformat-dev \
+    libswscale-dev \
+    libv4l-dev \
+    libxvidcore-dev \
+    libx264-dev \
+    # Additional utilities
+    wget \
+    curl \
+    git \
+    sudo \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Stage 2: Python dependencies installation
+FROM base AS python-deps
+
+# Set working directory
+WORKDIR /app
+
+# Copy requirements.txt terlebih dahulu untuk layer caching yang lebih baik
+COPY requirements.txt .
+
+# Install Python dependencies
+RUN pip install --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Stage 3: Application setup
+FROM python-deps AS app
+
+# Copy seluruh source code
+COPY . .
+
+# Buat user non-root untuk keamanan
+RUN groupadd -r appuser && useradd -r -g appuser appuser && \
+    echo 'appuser ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
+
+# Buat direktori yang dibutuhkan & beri izin
+RUN mkdir -p \
+        /home/appuser/.config/Ultralytics \
+        /app/dataset \
+        /app/outputs \
+        /app/config \
+        /app/logs \
+        /app/models \
+        /app/temp && \
+    chown -R appuser:appuser /home/appuser /app
+
+# Gunakan user non-root
+USER appuser
+
+# Set working directory
+WORKDIR /app
+
+# Health check untuk memastikan PyTorch berfungsi
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c "import torch; print('PyTorch available:', torch.cuda.is_available())" || exit 1
+
+# Default command untuk training classifier dengan parameter yang dapat dikustomisasi
+CMD ["python", "main.py", "--pipeline", "classifier", "--epochs", "10", "--batch_size", "32", "--num_workers", "4", "--lr_bert", "2e-5", "--lr_resnet", "1e-4", "--lr_heads", "1e-3"]
+
+# Labels untuk metadata
+LABEL maintainer="BPJS AntiFraud" \
+      version="1.0.0" \
+      description="BPJS AntiFraud Training Models - ML Pipeline untuk Classifier dan Signature Detection"
