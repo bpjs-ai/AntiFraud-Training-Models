@@ -46,7 +46,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="BPJS Training Pipeline Orchestrator"
     )
-    
+
     # Pipeline selection
     parser.add_argument(
         "--pipeline",
@@ -54,7 +54,7 @@ def parse_args() -> argparse.Namespace:
         default="both",
         help="Which pipeline to run (default: both)"
     )
-    
+
     # Dataset directory configuration
     parser.add_argument(
         "--dataset-dir",
@@ -62,7 +62,7 @@ def parse_args() -> argparse.Namespace:
         default="dataset",
         help="Local dataset directory"
     )
-    
+
     # Output configuration
     parser.add_argument(
         "--output_dir",
@@ -70,54 +70,103 @@ def parse_args() -> argparse.Namespace:
         default="outputs",
         help="Base output directory for all pipeline results"
     )
-    
+
     # Skip dataset download
     parser.add_argument(
         "--skip_download",
         action="store_true",
         help="Skip dataset download and use existing data"
     )
-    
+
     # Classifier specific arguments
     parser.add_argument(
-        "--classifier_config",
+        "--data_csv_path",
         type=str,
-        help="Path to classifier configuration JSON file"
+        default="dataset/classifier/data.csv",
+        help="Classifier CSV dataset path"
     )
-    
-    # Signature specific arguments  
     parser.add_argument(
-        "--signature_workspace",
+        "--image_root_dir",
         type=str,
-        default="signature-detection",
+        default="dataset/classifier",
+        help="Classifier image root directory"
+    )
+
+    # Signature specific arguments
+    parser.add_argument(
+        "--workspace",
+        dest="signature_workspace",
+        type=str,
+        default="ahmad-zaki-firdaus",
         help="Roboflow workspace for signature training (fallback if S3 fails)"
     )
     parser.add_argument(
-        "--signature_project", 
+        "--project",
+        dest="signature_project",
         type=str,
         default="signature-detection-hlx8j-mem1d",
         help="Roboflow project for signature training (fallback if S3 fails)"
     )
     parser.add_argument(
-        "--signature_version",
+        "--version",
+        dest="signature_version",
         type=int,
         default=3,
         help="Roboflow version for signature training (fallback if S3 fails)"
     )
     parser.add_argument(
-        "--signature_epochs",
+        "--model",
+        dest="signature_model",
+        type=str,
+        default="yolo11n.pt",
+        help="YOLOv11 base model checkpoint to fine-tune"
+    )
+    parser.add_argument(
+        "--epochs",
+        dest="signature_epochs",
         type=int,
         default=70,
         help="Number of epochs for signature training"
     )
-    
+    parser.add_argument(
+        "--imgsz",
+        dest="signature_imgsz",
+        type=int,
+        default=640,
+        help="Input image size for signature training"
+    )
+    parser.add_argument(
+        "--patience",
+        dest="signature_patience",
+        type=int,
+        default=10,
+        help="Early stopping patience for signature training"
+    )
+    parser.add_argument(
+        "--out-dir",
+        dest="signature_out_dir",
+        type=str,
+        help="Output directory for signature training results"
+    )
+    parser.add_argument(
+        "--data-format",
+        dest="signature_data_format",
+        type=str,
+        default="yolov11",
+        help="Dataset export format requested from Roboflow"
+    )
+
     return parser.parse_args()
 
 
 def download_datasets(args: argparse.Namespace) -> bool:
     """Download datasets from S3 with smart skip functionality using environment variables."""
     import os
-    
+
+    if args.skip_download:
+        logging.info("Skipping dataset download as requested.")
+        return True
+
     try:
         s3_handler = S3Handler()
         
@@ -191,16 +240,12 @@ def training_classifier(args: argparse.Namespace, logger: logging.Logger) -> boo
         classifier_output_dir = Path(args.output_dir) / "classifier" / datetime.now().strftime('%Y%m%d%H')
         classifier_args.extend(["--output_dir", str(classifier_output_dir)])
         
-        # Add config if provided
-        if args.classifier_config:
-            classifier_args.extend(["--config", args.classifier_config])
-        
-        # Set default paths if no config provided
-        if not args.classifier_config:
-            classifier_args.extend([
-                "--data_csv_path", "dataset/classifier/data.csv",
-                "--image_root_dir", "dataset/classifier"
-            ])
+        # Add classifier-specific overrides
+        if args.data_csv_path:
+            classifier_args.extend(["--data_csv_path", args.data_csv_path])
+
+        if args.image_root_dir:
+            classifier_args.extend(["--image_root_dir", args.image_root_dir])
         
         # Override sys.argv for classifier main
         original_argv = sys.argv.copy()
@@ -243,7 +288,10 @@ def training_signature(args: argparse.Namespace, logger: logging.Logger) -> bool
         signature_args = []
         
         # Add output directory
-        signature_output_dir = Path(args.output_dir) / "signature" / datetime.now().strftime('%Y%m%d%H')
+        if args.signature_out_dir:
+            signature_output_dir = Path(args.signature_out_dir)
+        else:
+            signature_output_dir = Path(args.output_dir) / "signature" / datetime.now().strftime('%Y%m%d%H')
         signature_args.extend(["--out-dir", str(signature_output_dir)])
         
         # Add signature specific arguments
@@ -253,6 +301,15 @@ def training_signature(args: argparse.Namespace, logger: logging.Logger) -> bool
             "--version", str(args.signature_version),
             "--epochs", str(args.signature_epochs)
         ])
+        
+        if args.signature_model:
+            signature_args.extend(["--model", args.signature_model])
+        if args.signature_imgsz:
+            signature_args.extend(["--imgsz", str(args.signature_imgsz)])
+        if args.signature_patience is not None:
+            signature_args.extend(["--patience", str(args.signature_patience)])
+        if args.signature_data_format:
+            signature_args.extend(["--data-format", args.signature_data_format])
         
         # Override sys.argv for signature main
         original_argv = sys.argv.copy()
