@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 from datetime import datetime
 
+from utils.s3_utils import S3Handler
 from train_classifier.config import TrainConfig
 from train_classifier.dataset import (
     build_dataloaders,
@@ -79,6 +80,7 @@ def load_config(args) -> TrainConfig:
 def main():
     args = parse_args()
     cfg = load_config(args)
+    s3_handler = S3Handler()
 
     os.makedirs(cfg.output_dir, exist_ok=True)
     # Backward compatibility for older configs
@@ -257,7 +259,7 @@ def main():
             },
             opset_version=18,
         )
-
+    s3_handler.upload_file(cfg.best_onnx_model_path, f"outputs_training/{os.path.basename(cfg.best_onnx_model_path)}")
     print(f"✅ ONNX model saved at {cfg.best_onnx_model_path}")
 
 
