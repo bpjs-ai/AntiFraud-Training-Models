@@ -21,6 +21,8 @@ from train_classifier.train_utils import (
     save_label_mapping,
     train_one_epoch,
 )
+import subprocess
+    
 
 
 def parse_args():
@@ -80,6 +82,18 @@ def main():
     os.makedirs(cfg.output_dir, exist_ok=True)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    input_folder=cfg.image_root_dir
+    output_csv=cfg.data_csv_path
+
+    
+
+    subprocess.run([
+        "python", "train_classifier/ocr_paddle.py",
+        "--input_folder", cfg.image_root_dir,
+        "--output_csv", cfg.data_csv_path,
+        "--num_workers", "60"
+    ])
 
     # Dataframe & label map
     df, label_to_id = load_and_prepare_dataframe(
@@ -159,14 +173,34 @@ def main():
     # Save label mapping
     save_label_mapping(label_to_id, cfg.label_map_path)
 
-    # Quantize linear layers for inference footprint reduction
-    try:
-        quantized_model = torch.quantization.quantize_dynamic(model, {nn.Linear}, dtype=torch.qint8)
-        torch.save(quantized_model.state_dict(), cfg.best_quantized_model_path)
-    except Exception as e:
-        print(f"Quantization skipped: {e}")
-
     print("Training completed.")
+    # Export ke ONNX pakai batch asli dari val_loader
+    model.eval()
+    with torch.no_grad():
+        example_batch = next(iter(val_loader))
+
+        example_input = (
+            example_batch["input_ids"].to(device),
+            example_batch["attention_mask"].to(device),
+            example_batch["pixel_values"].to(device)
+        )
+
+        torch.onnx.export(
+            model,
+            example_input,
+            cfg.best_onnx_model_path,
+            input_names=["input_ids", "attention_mask", "pixel_values"],
+            output_names=["output"],
+            dynamic_axes={
+                "input_ids": {0: "batch_size"},
+                "attention_mask": {0: "batch_size"},
+                "pixel_values": {0: "batch_size"},
+                "output": {0: "batch_size"}
+            },
+            opset_version=17
+        )
+    print(f"✅ ONNX model saved at {cfg.best_onnx_model_path}")
+
 
 
 if __name__ == "__main__":

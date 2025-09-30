@@ -24,6 +24,7 @@ from train_signature.main_yolo import main as signature_main
 from train_signature.download_dataset import download_dataset
 
 
+
 def setup_logging(output_dir: Path) -> logging.Logger:
     """Setup logging configuration."""
     log_file = output_dir / f"pipeline_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
@@ -169,6 +170,17 @@ def download_datasets(args: argparse.Namespace) -> bool:
 def training_classifier(args: argparse.Namespace, logger: logging.Logger) -> bool:
     """Execute classifier training pipeline."""
     logger.info("🚀 Starting Classifier Training Pipeline")
+
+    print("\n=== Downloading Classifier Dataset ===")
+    # try:
+    #     classifier_path = download_dataset(
+    #         dataset_type="classifier",
+    #         s3_prefix="dataset/classifier/",  # Replace with actual S3 prefix
+    #         local_base_dir=""  # Current directory
+    #     )
+    #     print(f"Classifier dataset downloaded to: {classifier_path}")
+    # except Exception as e:
+    #     print(f"Error downloading classifier dataset: {e}")
     
     try:
         
@@ -186,8 +198,8 @@ def training_classifier(args: argparse.Namespace, logger: logging.Logger) -> boo
         # Set default paths if no config provided
         if not args.classifier_config:
             classifier_args.extend([
-                "--data_csv_path", "dataset/classifier/namadocs/data.csv",
-                "--image_root_dir", "dataset/classifier/namadocs/"
+                "--data_csv_path", "dataset/classifier/data.csv",
+                "--image_root_dir", "dataset/classifier"
             ])
         
         # Override sys.argv for classifier main
@@ -213,24 +225,26 @@ def training_classifier(args: argparse.Namespace, logger: logging.Logger) -> boo
 def training_signature(args: argparse.Namespace, logger: logging.Logger) -> bool:
     """Execute signature training pipeline."""
     logger.info("🚀 Starting Signature Training Pipeline")
+
+    print("\n=== Downloading Signature Dataset ===")
+    # try:
+    #     signature_path = download_dataset(
+    #         dataset_type="signature",
+    #         s3_prefix="dataset/signature/",  # Replace with actual S3 prefix
+    #         local_base_dir="."  # Current directory
+    #     )
+    #     print(f"Signature dataset downloaded to: {signature_path}")
+    # except Exception as e:
+    #     print(f"Error downloading signature dataset: {e}")
     
     try:
-        # Download dataset if not skipped
-        if not args.skip_download:
-            s3_prefix = args.s3_prefix or args.signature_s3_prefix
-            if not s3_prefix:
-                raise ValueError("S3 prefix required for signature dataset download")
-            
-            logger.info(f"📥 Downloading signature dataset from S3: {s3_prefix}")
-            dataset_path = download_dataset("signature", s3_prefix)
-            logger.info(f"✅ Signature dataset downloaded to: {dataset_path}")
         
         # Prepare signature arguments
         signature_args = []
         
         # Add output directory
         signature_output_dir = Path(args.output_dir) / "signature" / datetime.now().strftime('%Y%m%d_%H%M%S')
-        signature_args.extend(["--out_dir", str(signature_output_dir)])
+        signature_args.extend(["--out-dir", str(signature_output_dir)])
         
         # Add signature specific arguments
         signature_args.extend([

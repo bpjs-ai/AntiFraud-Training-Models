@@ -42,7 +42,7 @@ def download_classifier_dataset(s3_prefix: str, local_base_dir: Optional[str] = 
         local_base_dir = os.getcwd()
     
     # Ensure the directory structure exists
-    classifier_dir = Path(local_base_dir) / "dataset" / "classifier" / "namadocs"
+    classifier_dir = Path(local_base_dir) / "dataset" / "classifier"
     classifier_dir.mkdir(parents=True, exist_ok=True)
     
     # Initialize S3 handler
@@ -55,7 +55,7 @@ def download_classifier_dataset(s3_prefix: str, local_base_dir: Optional[str] = 
     downloaded_files, skipped_files = s3_handler.download_folder_recursive(
         s3_prefix=s3_prefix,
         local_dir=str(classifier_dir),
-        skip_existing=True
+        skip_existing=False
     )
     
     print(f"✅ Downloaded {len(downloaded_files)} files for classifier dataset")
@@ -109,7 +109,7 @@ def download_signature_dataset(s3_prefix: str, local_base_dir: Optional[str] = N
     downloaded_files, skipped_files = s3_handler.download_folder_recursive(
         s3_prefix=s3_prefix,
         local_dir=str(signature_dir),
-        skip_existing=True
+        skip_existing=False
     )
     
     print(f"✅ Downloaded {len(downloaded_files)} files for signature dataset")

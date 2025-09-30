@@ -40,18 +40,9 @@ def main() -> None:
     print(f"Output dir:{out_path}\n")
 
     # Ensure datasets directory exists
-    datasets_dir = Path.cwd() / "datasets"
+    datasets_dir = Path.cwd() / "dataset"
     datasets_dir.mkdir(exist_ok=True)
-
-    # Download dataset
-    print("Downloading dataset from Roboflow…")
-    dataset_dir = download_dataset(
-        workspace=args.workspace,
-        project=args.project,
-        version=args.version,
-        export_format=args.data_format,
-    )
-    data_yaml = dataset_dir / "data.yaml"
+    data_yaml = "dataset/signature/data.yaml"
 
     # Train model
     print("\nStarting training…")

@@ -1,0 +1,9 @@
+path: ../dataset/signature   # root dataset
+
+train: train/images
+val: train/images   # YOLO akan split otomatis dari folder train/images
+test: test/images
+
+nc: 2
+names: ['qr', 'ttd']
+

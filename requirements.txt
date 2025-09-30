@@ -1,6 +1,3 @@
-# BPJS Training Pipeline Requirements
-# Generated based on codebase analysis
-
 # Data Science & Machine Learning
 torch>=2.0.0
 torchvision>=0.15.0
@@ -8,6 +5,8 @@ transformers>=4.30.0
 scikit-learn>=1.3.0
 pandas>=2.0.0
 numpy>=1.24.0
+paddleocr==2.10.0
+paddlepaddle==3.0.0
 
 # Computer Vision & Image Processing
 Pillow>=10.0.0

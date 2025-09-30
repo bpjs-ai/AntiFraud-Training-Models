@@ -6,6 +6,7 @@ from typing import List
 import logging
 from tqdm import tqdm
 from dotenv import load_dotenv
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 load_dotenv()
@@ -180,117 +181,92 @@ class S3Handler:
         except Exception as e:
             return False
 
-
-    def download_folder(self, s3_prefix: str, local_dir: str) -> List[str]:
-        """
-        Download all objects under the given S3 prefix into local_dir, preserving folder structure.
-        
-        :param s3_prefix: the "folder" in S3 (e.g. 'path/to/folder/')
-        :param local_dir: local directory to write files into
-        :return: list of local file paths downloaded
-        """
-        paginator = self.s3_client.get_paginator('list_objects_v2')
-        downloaded_files: List[str] = []
-        skipped_files: List[str] = []
-
-        for page in paginator.paginate(Bucket=self.bucket_name, Prefix=s3_prefix):
-            for obj in page.get('Contents', []):
-                key = obj['Key']
-                if key.endswith('/'):
-                    continue
-
-                relative_path = key[len(s3_prefix):].lstrip('/')
-                local_path = os.path.join(local_dir, relative_path)
-
-                # Tambahkan skip file jika file pdf sudah ada
-                if local_path.lower().endswith('.pdf') and os.path.isfile(local_path):
-                    skipped_files.append(relative_path)
-                    continue
-
-                if self.download_file(key, local_path):
-                    downloaded_files.append(local_path)
-
-        if skipped_files:
-            print(f"⏭️  Skipped {len(skipped_files)} existing PDF files: {', '.join(skipped_files[:5])}{'...' if len(skipped_files) > 5 else ''}")
-
-        return downloaded_files
-
-    def download_folder_recursive(self, s3_prefix: str, local_dir: str, file_extension: str = "", skip_existing: bool = True):
+    
+    def download_folder_recursive(
+        self, 
+        s3_prefix: str, 
+        local_dir: str, 
+        file_extension: str = "", 
+        skip_existing: bool = True, 
+        max_workers: int = 30
+    ):
         """
         Download all objects under the given S3 prefix recursively into local_dir, 
-        preserving folder structure.
+        preserving folder structure (parallelized).
         
         :param s3_prefix: the "folder" in S3 (e.g. 'path/to/folder/')
         :param local_dir: local directory to write files into
         :param file_extension: optional file extension filter (e.g. '.pdf', '.txt')
         :param skip_existing: whether to skip files that already exist locally
+        :param max_workers: number of threads for parallel download
         :return: tuple of (downloaded_files, skipped_files)
         """
-        # Get list of files to download recursively
         files_to_download = []
         skipped_files = []
-        
-        # Use paginator to handle large numbers of objects
+    
         paginator = self.s3_client.get_paginator('list_objects_v2')
-        
+    
         for page in paginator.paginate(Bucket=self.bucket_name, Prefix=s3_prefix):
             for obj in page.get('Contents', []):
                 s3_key = obj['Key']
-                
-                # Skip directories (keys ending with '/')
+    
                 if s3_key.endswith('/'):
                     continue
-
                 if s3_key.endswith('.md') or s3_key.endswith('.xlsx'):
                     continue
-                
-                # Apply file extension filter if specified
                 if file_extension and not s3_key.lower().endswith(file_extension.lower()):
                     continue
-                
-                # Calculate relative path from s3_prefix to preserve folder structure
+    
                 relative_path = s3_key[len(s3_prefix):].lstrip('/')
                 local_path = os.path.join(local_dir, relative_path)
-                
-                # Check if file already exists locally (skip based on file existence, not folder)
+    
                 if skip_existing and os.path.isfile(local_path):
                     skipped_files.append(relative_path)
                     continue
-                
+    
                 files_to_download.append((relative_path, s3_key, local_path))
-        
+    
         if skipped_files:
-            print(f"⏭️  Skipped {len(skipped_files)} existing files: {', '.join(skipped_files[:5])}{'...' if len(skipped_files) > 5 else ''}")
-        
+            print(f"⏭️  Skipped {len(skipped_files)} existing files: "
+                  f"{', '.join(skipped_files[:5])}{'...' if len(skipped_files) > 5 else ''}")
+    
         if not files_to_download:
             print("No new files to download")
             return [], skipped_files
-        
-        # Download files with progress bar
+    
         downloaded_files = []
-        with tqdm(total=len(files_to_download), desc="Downloading files", unit="file") as pbar:
-            for relative_path, s3_key, local_path in files_to_download:
+    
+        # Parallel execution with ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_file = {
+                executor.submit(self._download_single_file, s3_key, local_path, relative_path): (relative_path, local_path)
+                for relative_path, s3_key, local_path in files_to_download
+            }
+    
+            for future in tqdm(as_completed(future_to_file), total=len(files_to_download), desc="Downloading files", unit="file"):
+                relative_path, local_path = future_to_file[future]
                 try:
-                    pbar.set_description(f"Downloading {relative_path}")
-                    
-                    # Create directory structure if it doesn't exist
-                    os.makedirs(os.path.dirname(local_path), exist_ok=True)
-                    
-                    # Download the file
-                    self.s3_client.download_file(self.bucket_name, s3_key, local_path)
-                    downloaded_files.append(local_path)
-                    pbar.set_postfix({"status": "✅"})
-                    
-                except ClientError as e:
-                    pbar.set_postfix({"status": "❌"})
-                    print(f"\n❌ Failed to download {relative_path}: {e}")
+                    success = future.result()
+                    if success:
+                        downloaded_files.append(local_path)
                 except Exception as e:
-                    pbar.set_postfix({"status": "⚠️"})
-                    print(f"\n⚠️ Other error while downloading {relative_path}: {e}")
-                finally:
-                    pbar.update(1)
-        
+                    print(f"⚠️ Error while downloading {relative_path}: {e}")
+    
         return downloaded_files, skipped_files
+    
+    
+    def _download_single_file(self, s3_key, local_path, relative_path):
+        """Helper to download a single file, used for parallel executor."""
+        try:
+            os.makedirs(os.path.dirname(local_path), exist_ok=True)
+            self.s3_client.download_file(self.bucket_name, s3_key, local_path)
+            return True
+        except ClientError as e:
+            print(f"❌ Failed to download {relative_path}: {e}")
+            return False
+        except Exception as e:
+            print(f"⚠️ Other error while downloading {relative_path}: {e}")
+            return False
 
     def file_exists(self, s3_key):
         """Check if a file exists in S3 bucket"""
