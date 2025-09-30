@@ -80,6 +80,16 @@ def main():
     cfg = load_config(args)
 
     os.makedirs(cfg.output_dir, exist_ok=True)
+    if not os.path.isabs(cfg.best_state_dict_path):
+        cfg.best_state_dict_path = os.path.join(
+            cfg.output_dir, os.path.basename(cfg.best_state_dict_path)
+        )
+    if not os.path.isabs(cfg.label_map_path):
+        cfg.label_map_path = os.path.join(cfg.output_dir, os.path.basename(cfg.label_map_path))
+
+    best_onnx_name = os.path.basename(getattr(cfg, "best_onnx_model_path", "best_model.onnx"))
+    if not os.path.isabs(getattr(cfg, "best_onnx_model_path", "")):
+        cfg.best_onnx_model_path = os.path.join(cfg.output_dir, best_onnx_name)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -163,7 +173,8 @@ def main():
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             early_stop_counter = 0
-            torch.save(model.state_dict(), cfg.best_model_path)
+            torch.save(model.state_dict(), cfg.best_state_dict_path)
+            print(f"Saved improved state dict to {cfg.best_state_dict_path}")
         else:
             early_stop_counter += 1
             if early_stop_counter >= cfg.early_stop_patience:
@@ -174,11 +185,36 @@ def main():
     save_label_mapping(label_to_id, cfg.label_map_path)
 
     print("Training completed.")
-    # Export ke ONNX pakai batch asli dari val_loader
-    model.eval()
-    with torch.no_grad():
-        example_batch = next(iter(val_loader))
 
+    # Reload the best checkpoint before exporting to ensure ONNX uses the best weights
+    if os.path.exists(cfg.best_state_dict_path):
+        model.load_state_dict(torch.load(cfg.best_state_dict_path, map_location=device))
+        model.to(device)
+    else:
+        print(
+            f"Warning: best model checkpoint not found at {cfg.best_state_dict_path}. "
+            "Skipping ONNX export."
+        )
+        return
+
+    model.eval()
+
+    # Try to grab an example batch from the validation loader, fallback to the training loader
+    example_batch = None
+    for loader in (val_loader, train_loader):
+        if loader is None:
+            continue
+        try:
+            example_batch = next(iter(loader))
+            break
+        except StopIteration:
+            continue
+
+    if example_batch is None:
+        print("Warning: Unable to retrieve a batch for ONNX export. Skipping export.")
+        return
+
+    with torch.no_grad():
         example_input = (
             example_batch["input_ids"].to(device),
             example_batch["attention_mask"].to(device),
@@ -190,15 +226,16 @@ def main():
             example_input,
             cfg.best_onnx_model_path,
             input_names=["input_ids", "attention_mask", "pixel_values"],
-            output_names=["output"],
+            output_names=["logits"],
             dynamic_axes={
-                "input_ids": {0: "batch_size"},
-                "attention_mask": {0: "batch_size"},
+                "input_ids": {0: "batch_size", 1: "sequence"},
+                "attention_mask": {0: "batch_size", 1: "sequence"},
                 "pixel_values": {0: "batch_size"},
-                "output": {0: "batch_size"}
+                "logits": {0: "batch_size"}
             },
-            opset_version=17
+            opset_version=18,
         )
+
     print(f"✅ ONNX model saved at {cfg.best_onnx_model_path}")
 
 

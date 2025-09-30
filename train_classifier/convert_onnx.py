@@ -1,26 +1,25 @@
-import torch
-import numpy as np
-import onnxruntime as ort
-from transformers import BertTokenizer
-from PIL import Image
-from torchvision import transforms
-import torch.nn as nn
-import json
-from torch.utils.data import Dataset, DataLoader
-import torch.nn as nn
-import torch
-from transformers import BertModel, BertTokenizer
-from torchvision.models import resnet50, ResNet50_Weights
-from torchvision import transforms, models
-import pandas as pd
 import os
 import json
+from pathlib import Path
+from io import BytesIO
+
+import fitz  # PyMuPDF
+import numpy as np
+import onnxruntime as ort
+import pandas as pd
+import torch
+import torch.nn as nn
+from PIL import Image
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-import numpy as np
-from PIL import Image
-import fitz  # PyMuPDF
-from io import BytesIO
+from torch.utils.data import Dataset, DataLoader
+from transformers import BertModel, BertTokenizer
+from torchvision import models, transforms
+from torchvision.models import ResNet50_Weights, resnet50
+
+import warnings
+
+warnings.filterwarnings("ignore")
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -131,8 +130,15 @@ pixel_values = transform(image).unsqueeze(0)
 input_ids = encoding["input_ids"]
 attention_mask = encoding["attention_mask"]
 
-class_mapping_path = 'label2id.json'
-with open(class_mapping_path, 'r') as f:
+STATE_DICT_PATH = Path("outputs/best_model.pt")
+if not STATE_DICT_PATH.exists():
+    STATE_DICT_PATH = Path("best_model.pt")
+
+LABEL_MAP_PATH = Path("outputs/label2id.json")
+if not LABEL_MAP_PATH.exists():
+    LABEL_MAP_PATH = Path("label2id.json")
+
+with open(LABEL_MAP_PATH, "r", encoding="utf-8") as f:
     raw_class_names = json.load(f)
 
 class_names = {str(v): k for k, v in raw_class_names.items()}
@@ -140,7 +146,7 @@ class_names = {str(v): k for k, v in raw_class_names.items()}
 # --- 3. Load model ---
 device = "cuda" if torch.cuda.is_available() else "cpu"
 model = HybridModel(num_classes=len(class_names)).to(device)
-model.load_state_dict(torch.load("best_model.pt", map_location=device))
+model.load_state_dict(torch.load(str(STATE_DICT_PATH), map_location=device))
 model.eval()
 
 input_ids = input_ids.to(device)

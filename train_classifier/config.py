@@ -34,7 +34,8 @@ class TrainConfig:
 
     # Output
     output_dir: str = "outputs"
-    best_model_path: str = "outputs/best_model.pt"
+    best_state_dict_path: str = "outputs/best_model.pt"
     label_map_path: str = "outputs/label2id.json"
+    best_onnx_model_path: str = "outputs/best_model.onnx"
 
 
