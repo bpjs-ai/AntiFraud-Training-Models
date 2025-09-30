@@ -6,6 +6,7 @@ on:
       - main
     paths-ignore:
       - 'docker-compose.*'
+      - 'Dockerfile.ubuntu'
 
 jobs:
   build_push:
@@ -37,7 +38,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: Dockerfile
+          file: Dockerfile.python
           push: true
           tags: ${{ steps.metadata.outputs.tags }}
           labels: ${{ steps.metadata.outputs.labels }}
