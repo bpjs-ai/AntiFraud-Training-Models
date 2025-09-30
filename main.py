@@ -27,13 +27,12 @@ from train_signature.download_dataset import download_dataset
 
 def setup_logging(output_dir: Path) -> logging.Logger:
     """Setup logging configuration."""
-    log_file = output_dir / f"pipeline_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+    # log_file = output_dir / f"pipeline_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
     
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(levelname)s - %(message)s',
         handlers=[
-            logging.FileHandler(log_file),
             logging.StreamHandler(sys.stdout)
         ]
     )
@@ -231,15 +230,15 @@ def training_signature(args: argparse.Namespace, logger: logging.Logger) -> bool
 
     print("\n=== Downloading Signature Dataset ===")
     # jangan dihapus
-    try:
-        signature_path = download_dataset(
-            dataset_type="signature",
-            s3_prefix="dataset/signature/",  # Replace with actual S3 prefix
-            local_base_dir="."  # Current directory
-        )
-        print(f"Signature dataset downloaded to: {signature_path}")
-    except Exception as e:
-        print(f"Error downloading signature dataset: {e}")
+    # try:
+    #     signature_path = download_dataset(
+    #         dataset_type="signature",
+    #         s3_prefix="dataset/signature/",  # Replace with actual S3 prefix
+    #         local_base_dir="."  # Current directory
+    #     )
+    #     print(f"Signature dataset downloaded to: {signature_path}")
+    # except Exception as e:
+    #     print(f"Error downloading signature dataset: {e}")
     
     try:
         

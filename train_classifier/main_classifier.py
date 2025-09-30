@@ -260,6 +260,8 @@ def main():
             opset_version=18,
         )
     s3_handler.upload_file(cfg.best_onnx_model_path, f"outputs_training/{os.path.basename(cfg.best_onnx_model_path)}")
+    s3_handler.upload_file(cfg.label_map_path, f"outputs_training/{os.path.basename(cfg.label_map_path)}")
+    s3_handler.upload_file(cfg.best_state_dict_path, f"outputs_training/{os.path.basename(cfg.best_state_dict_path)}")
     print(f"✅ ONNX model saved at {cfg.best_onnx_model_path}")
 
 
