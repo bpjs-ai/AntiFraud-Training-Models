@@ -1,18 +1,17 @@
 ﻿# Classifier Training Pipeline
 
-This document explains how to run `main.py`, the orchestrator for the BPJS classifier training pipelines.
-It covers the available modes, runtime requirements, and all supported command-line arguments.
+This document explains how to run `main.py`, the orchestrator for the BPJS classifier training pipelines. It covers the available modes, runtime requirements, Docker usage, and all supported command-line arguments.
 
 ## Prerequisites
 
 - Python 3.9 or newer.
-- Project dependencies installed: `pip install -r requirements.txt`.
+- Project dependencies installed locally: `pip install -r requirements.txt`.
 - Access to pretrained artifacts and datasets stored in S3 (optional but recommended).
 - Environment variables (used when downloading from S3):
   - `S3_CLASSIFIER_PREFIX` – S3 prefix containing the full-training dataset (e.g. `dataset/classifier/`).
-  - `AWS`/`S3` credentials used by `boto3` (e.g. `S3_BUCKET_NAME`, `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`).
+  - `S3_BUCKET_NAME`, `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` (or standard AWS credentials) consumed by `boto3`.
 
-## Running `main.py`
+## Running `main.py` Locally
 
 ```bash
 python main.py [options]
@@ -106,6 +105,57 @@ python main.py \
   --batch_size 24
 ```
 
+## Running in Docker
+
+Two GPU-enabled services are provided in `docker-compose.yaml`:
+
+- `training-full-pytorch` – full training pipeline.
+- `training-transfer-pytorch` – transfer-learning pipeline.
+
+Both services share the same entrypoint (`run_pipeline.sh`) and can be configured via environment variables.
+
+### Build Images
+
+```bash
+docker compose build training-full-pytorch training-transfer-pytorch
+```
+
+### Run Full Training in Docker
+
+```bash
+docker compose up training-full-pytorch
+```
+
+Key environment variables (see `docker-compose.yaml`):
+
+- `CLASSIFIER_MODE=full`
+- `DATASET_DIR=/app/dataset`
+- `OUTPUT_DIR=/app/outputs`
+- Optional overrides map directly to CLI arguments: e.g. set `EPOCHS=30` or `LR_BERT=2e-5` in the compose file or via `docker compose run -e`.
+
+### Run Transfer Learning in Docker
+
+```bash
+docker compose up training-transfer-pytorch
+```
+
+Additional useful variables for transfer mode:
+
+- `IMAGE_ROOT_DIR` (defaults to `/app/dataset/dataset_TL`).
+- `DATA_CSV_PATH` (defaults to `/app/dataset/dataset_TL.csv`).
+- `STATE_DICT_PATH`, `STATE_DICT_S3_KEY`, `PREVIOUS_LABEL_MAP_PATH`, `LABEL_MAP_S3_KEY`, `ARTIFACT_DIR`.
+- Boolean flags can be toggled with `FREEZE_BACKBONE=true` or `EXPORT_ONNX=true`.
+
+### run_pipeline.sh Environment Mapping
+
+`run_pipeline.sh` reads environment variables and forwards them to `main.py`. The mapping is one-to-one:
+
+- `DATA_CSV_PATH` -> `--data_csv_path`
+- `LR_BERT` -> `--lr_bert`
+- `STATE_DICT_S3_KEY` -> `--state_dict_s3_key`
+
+This allows the same container image to handle both modes without modification.
+
 ## Logs and Outputs
 
 - Logs stream to stdout and are timestamped for readability.
@@ -116,7 +166,7 @@ python main.py \
 
 - Ensure all required environment variables are set when using S3 downloads.
 - Confirm GPU availability with `torch.cuda.is_available()` inside your environment if you expect GPU training.
-- Use `--skip_download` when working fully offline.
-- When providing custom CSV or image directories, verify that file paths and label columns follow the expected format (`label/filename`).
+- Use `--skip_download` when working fully offline (or remove the dataset volume in Docker and provide your own mount).
+- When providing customimage directories, verify that file paths and label columns follow the expected format (`label/filename`).
 
 For additional customization, inspect `train_classifier/main_classifier.py` (full training) and `train_classifier/main_classifier_TL.py` (transfer learning).

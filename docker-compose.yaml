@@ -1,49 +1,62 @@
-services:
-  training-app-gpu-pytorch:
+﻿services:
+  training-full-pytorch:
     profiles:
       - gpu
     build:
       context: .
       dockerfile: Dockerfile.pytorch
       target: runtime-gpu
-    image: antifraud-training-app
+    image: antifraud-training-full
     shm_size: "2g"
-    container_name: antifraud_training_gpu
+    container_name: antifraud_training_full
     restart: unless-stopped
-    command: python main.py --pipeline classifier --dataset-dir /app/dataset --output_dir /app/outputs
+    command: ./run_pipeline.sh
     volumes:
       - ./dataset:/app/dataset
       - ./outputs:/app/outputs
-      - ./paddle_models:/app/paddle_models
+      - ./paddlemodel:/app/paddlemodel
       - model_cache_hf:/root/.cache/huggingface
       - model_cache_torch:/root/.cache/torch
     env_file:
       - .env
     environment:
+      - CLASSIFIER_MODE=full
+      - DATASET_DIR=/app/dataset
+      - OUTPUT_DIR=/app/outputs
       - HF_HOME=/root/.cache/huggingface
       - TORCH_HOME=/root/.cache/torch
       - PADDLEOCR_HOME=/app/.paddleocr
-      
-  training-app-gpu-python:
+
+  training-transfer-pytorch:
     profiles:
       - gpu
     build:
       context: .
-      dockerfile: Dockerfile.python
-    image: antifraud-training-app
+      dockerfile: Dockerfile.pytorch_TL
+      target: runtime-gpu
+    image: antifraud-training-transfer
     shm_size: "2g"
-    container_name: antifraud_training_gpu
+    container_name: antifraud_training_transfer
     restart: unless-stopped
-    command: python main.py --pipeline classifier --dataset-dir /app/dataset --output_dir /app/outputs
+    command: ./run_pipeline.sh
     volumes:
       - ./dataset:/app/dataset
       - ./outputs:/app/outputs
-      - ./paddle_models:/app/paddle_models
+      - ./paddlemodel:/app/paddlemodel
       - model_cache_hf:/root/.cache/huggingface
       - model_cache_torch:/root/.cache/torch
     env_file:
       - .env
     environment:
+      - CLASSIFIER_MODE=transfer
+      - DATASET_DIR=/app/dataset
+      - IMAGE_ROOT_DIR=/app/dataset/dataset_TL
+      - DATA_CSV_PATH=/app/dataset/dataset_TL.csv
+      - OUTPUT_DIR=/app/outputs
       - HF_HOME=/root/.cache/huggingface
       - TORCH_HOME=/root/.cache/torch
       - PADDLEOCR_HOME=/app/.paddleocr
+
+volumes:
+  model_cache_hf:
+  model_cache_torch:
