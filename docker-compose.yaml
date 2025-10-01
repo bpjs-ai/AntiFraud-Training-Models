@@ -1,4 +1,4 @@
-﻿services:
+services:
   training-full-pytorch:
     profiles:
       - gpu
@@ -10,7 +10,6 @@
     shm_size: "2g"
     container_name: antifraud_training_full
     restart: unless-stopped
-    command: ./run_pipeline.sh
     volumes:
       - ./dataset:/app/dataset
       - ./outputs:/app/outputs
@@ -38,7 +37,6 @@
     shm_size: "2g"
     container_name: antifraud_training_transfer
     restart: unless-stopped
-    command: ./run_pipeline.sh
     volumes:
       - ./dataset:/app/dataset
       - ./outputs:/app/outputs

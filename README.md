@@ -1,6 +1,6 @@
-﻿# Classifier Training Pipeline
+# Classifier Training Pipeline
 
-This document explains how to run `main.py`, the orchestrator for the BPJS classifier training pipelines. It covers the available modes, runtime requirements, Docker usage, and all supported command-line arguments.
+This document explains how to run `main.py`, the orchestrator for the BPJS classifier training pipelines. It covers local execution, Docker workflows, Airflow integration, and the supported command-line arguments.
 
 ## Prerequisites
 
@@ -131,7 +131,7 @@ Key environment variables (see `docker-compose.yaml`):
 - `CLASSIFIER_MODE=full`
 - `DATASET_DIR=/app/dataset`
 - `OUTPUT_DIR=/app/outputs`
-- Optional overrides map directly to CLI arguments: e.g. set `EPOCHS=30` or `LR_BERT=2e-5` in the compose file or via `docker compose run -e`.
+- Optional overrides map directly to CLI arguments: set `EPOCHS=30`, `LR_BERT=2e-5`, etc.
 
 ### Run Transfer Learning in Docker
 
@@ -146,15 +146,73 @@ Additional useful variables for transfer mode:
 - `STATE_DICT_PATH`, `STATE_DICT_S3_KEY`, `PREVIOUS_LABEL_MAP_PATH`, `LABEL_MAP_S3_KEY`, `ARTIFACT_DIR`.
 - Boolean flags can be toggled with `FREEZE_BACKBONE=true` or `EXPORT_ONNX=true`.
 
-### run_pipeline.sh Environment Mapping
+### `run_pipeline.sh` Environment Mapping
 
 `run_pipeline.sh` reads environment variables and forwards them to `main.py`. The mapping is one-to-one:
 
 - `DATA_CSV_PATH` -> `--data_csv_path`
 - `LR_BERT` -> `--lr_bert`
 - `STATE_DICT_S3_KEY` -> `--state_dict_s3_key`
+- `CLASSIFIER_EXTRA_ARGS` – additional CLI tokens appended verbatim (`"--epochs 5 --batch_size 16"`).
+- `SKIP_MODEL_DOWNLOADS` – set to `true`/`1` to skip the optional warm-up downloads for BERT and ResNet weights.
 
 This allows the same container image to handle both modes without modification.
+
+## Running from Airflow (KubernetesPodOperator)
+
+Use the built Docker images (`antifraud-training-full` or `antifraud-training-transfer`) with the KubernetesPodOperator. Example:
+
+```python
+from airflow.providers.cncf.kubernetes.operators.kubernetes_pod import KubernetesPodOperator
+
+train_full = KubernetesPodOperator(
+    task_id="train_classifier_full",
+    name="classifier-full",
+    namespace="ml",
+    image="registry.example.com/antifraud-training-full:latest",
+    env_vars={
+        "CLASSIFIER_MODE": "full",
+        "DATASET_DIR": "/app/dataset",
+        "OUTPUT_DIR": "/app/outputs",
+        "CLASSIFIER_EXTRA_ARGS": "--epochs 20 --batch_size 48",
+    },
+    get_logs=True,
+    is_delete_operator_pod=True,
+    startup_timeout_seconds=600,
+    resources={
+        "limit_gpu": 1,
+    },
+)
+```
+
+For transfer learning, switch `image` to `antifraud-training-transfer` (or keep the same image and set `CLASSIFIER_MODE=transfer`) and provide the relevant artifacts:
+
+```python
+train_transfer = KubernetesPodOperator(
+    task_id="train_classifier_transfer",
+    name="classifier-transfer",
+    namespace="ml",
+    image="registry.example.com/antifraud-training-transfer:latest",
+    env_vars={
+        "CLASSIFIER_MODE": "transfer",
+        "DATASET_DIR": "/app/dataset",
+        "IMAGE_ROOT_DIR": "/app/dataset/dataset_TL",
+        "DATA_CSV_PATH": "/app/dataset/dataset_TL.csv",
+        "STATE_DICT_S3_KEY": "outputs_training/state_dict.pt",
+        "LABEL_MAP_S3_KEY": "outputs_training/label2id.json",
+        "CLASSIFIER_EXTRA_ARGS": "--freeze_backbone --epochs 8",
+        "SKIP_MODEL_DOWNLOADS": "true",
+    },
+    secrets=[...],  # mount S3 credentials / AWS secrets
+    get_logs=True,
+    is_delete_operator_pod=True,
+    resources={
+        "limit_gpu": 1,
+    },
+)
+```
+
+Mount persistent volumes or object stores as needed for `/app/dataset` and `/app/outputs`. GPU scheduling depends on your Kubernetes runtime (e.g. NVIDIA device plugin).
 
 ## Logs and Outputs
 
@@ -166,7 +224,7 @@ This allows the same container image to handle both modes without modification.
 
 - Ensure all required environment variables are set when using S3 downloads.
 - Confirm GPU availability with `torch.cuda.is_available()` inside your environment if you expect GPU training.
-- Use `--skip_download` when working fully offline (or remove the dataset volume in Docker and provide your own mount).
-- When providing customimage directories, verify that file paths and label columns follow the expected format (`label/filename`).
+- Use `--skip_download` (or `SKIP_MODEL_DOWNLOADS=true` in Docker/Airflow) when warm-up downloads are unnecessary.
+- When providing custom CSV or image directories, verify that file paths and label columns follow the expected format (`label/filename`).
 
 For additional customization, inspect `train_classifier/main_classifier.py` (full training) and `train_classifier/main_classifier_TL.py` (transfer learning).

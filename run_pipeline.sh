@@ -1,12 +1,25 @@
-﻿#!/usr/bin/env bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
-export HF_HOME=/root/.cache/huggingface
-export TORCH_HOME=/root/.cache/torch
-export PIP_NO_CACHE_DIR=1
+export HF_HOME=${HF_HOME:-/root/.cache/huggingface}
+export TORCH_HOME=${TORCH_HOME:-/root/.cache/torch}
+export PIP_NO_CACHE_DIR=${PIP_NO_CACHE_DIR:-1}
 
-python -c "from transformers import AutoModel; AutoModel.from_pretrained('indobenchmark/indobert-base-p2')"
-python -c "from torchvision.models import resnet50, ResNet50_Weights; resnet50(weights=ResNet50_Weights.IMAGENET1K_V1)"
+should_download="true"
+if [[ -n "${SKIP_MODEL_DOWNLOADS:-}" ]]; then
+  case "${SKIP_MODEL_DOWNLOADS}" in
+    1|true|True|TRUE|yes|YES)
+      should_download="false"
+      ;;
+  esac
+fi
+
+if [[ "$should_download" == "true" ]]; then
+  python -c "from transformers import AutoModel; AutoModel.from_pretrained('indobenchmark/indobert-base-p2')"
+  python -c "from torchvision.models import resnet50, ResNet50_Weights; resnet50(weights=ResNet50_Weights.IMAGENET1K_V1)"
+else
+  echo "[INFO] Skipping pretrained model warmup downloads."
+fi
 
 CLASSIFIER_MODE="${CLASSIFIER_MODE:-full}"
 ARGS=(
@@ -18,7 +31,7 @@ ARGS=(
 append_if_set() {
   local var_name="$1"
   local flag="$2"
-  local value="${!var_name}"
+  local value="${!var_name:-}"
   if [[ -n "$value" ]]; then
     ARGS+=("$flag" "$value")
   fi
@@ -27,10 +40,12 @@ append_if_set() {
 append_flag_if_truthy() {
   local var_name="$1"
   local flag="$2"
-  local value="${!var_name}"
-  if [[ "$value" == "1" || "$value" == "true" || "$value" == "True" ]]; then
-    ARGS+=("$flag")
-  fi
+  local value="${!var_name:-}"
+  case "$value" in
+    1|true|True|TRUE|yes|YES)
+      ARGS+=("$flag")
+      ;;
+  esac
 }
 
 append_if_set DATA_CSV_PATH "--data_csv_path"
@@ -55,4 +70,9 @@ append_if_set EARLY_STOP_PATIENCE "--early_stop_patience"
 append_flag_if_truthy FREEZE_BACKBONE "--freeze_backbone"
 append_flag_if_truthy EXPORT_ONNX "--export_onnx"
 
-python main.py "${ARGS[@]}"
+if [[ -n "${CLASSIFIER_EXTRA_ARGS:-}" ]]; then
+  read -r -a extra_args <<< "${CLASSIFIER_EXTRA_ARGS}"
+  ARGS+=("${extra_args[@]}")
+fi
+
+exec python main.py "${ARGS[@]}"
