@@ -93,26 +93,6 @@ spec:
             cpu: "48000m"
             memory: "96Gi"
             nvidia.com/gpu: 1
-        livenessProbe:
-          exec:
-            command:
-            - python
-            - -c
-            - "import torch; import sys; sys.exit(0 if torch.cuda.is_available() else 1)"
-          initialDelaySeconds: 60
-          periodSeconds: 300
-          timeoutSeconds: 3600
-          failureThreshold: 3
-        readinessProbe:
-          exec:
-            command:
-            - python
-            - -c
-            - "import torch; import sys; sys.exit(0 if torch.cuda.is_available() else 1)"
-          initialDelaySeconds: 30
-          periodSeconds: 300
-          timeoutSeconds: 3600
-          failureThreshold: 3
       volumes:
       - name: dataset-volume
         hostPath:
