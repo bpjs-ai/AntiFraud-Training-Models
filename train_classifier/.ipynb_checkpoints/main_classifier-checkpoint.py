@@ -117,19 +117,20 @@ def main():
 
     print(torch.cuda.is_available())
 
-    device = torch.device("cuda")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
 
     input_folder=cfg.image_root_dir
     output_csv=cfg.data_csv_path
 
     
 
-    # subprocess.run([
-    #     "python", "train_classifier/ocr_paddle.py",
-    #     "--input_folder", cfg.image_root_dir,
-    #     "--output_csv", cfg.data_csv_path,
-    #     "--num_workers", "50"
-    # ])
+    subprocess.run([
+        "python", "train_classifier/ocr_paddle.py",
+        "--input_folder", cfg.image_root_dir,
+        "--output_csv", cfg.data_csv_path,
+        "--num_workers", "50"
+    ])
 
     # Dataframe & label map
     df, label_to_id = load_and_prepare_dataframe(
