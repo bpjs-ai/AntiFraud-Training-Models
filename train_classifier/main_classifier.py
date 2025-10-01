@@ -3,7 +3,9 @@ import os
 import json
 import torch
 import torch.nn as nn
+from datetime import datetime
 
+from utils.s3_utils import S3Handler
 from train_classifier.config import TrainConfig
 from train_classifier.dataset import (
     build_dataloaders,
@@ -30,8 +32,8 @@ def parse_args():
     parser.add_argument("--config", type=str, default=None, help="Path to JSON config file")
 
     # Allow override via CLI
-    parser.add_argument("--data_csv_path", type=str, default=None)
-    parser.add_argument("--image_root_dir", type=str, default=None)
+    parser.add_argument("--data_csv_path", type=str, default="dataset/classifier/data.csv")
+    parser.add_argument("--image_root_dir", type=str, default="dataset/classifier")
     parser.add_argument("--val_size", type=float, default=None)
     parser.add_argument("--epochs", type=int, default=None)
     parser.add_argument("--batch_size", type=int, default=None)
@@ -78,6 +80,7 @@ def load_config(args) -> TrainConfig:
 def main():
     args = parse_args()
     cfg = load_config(args)
+    s3_handler = S3Handler()
 
     os.makedirs(cfg.output_dir, exist_ok=True)
     # Backward compatibility for older configs
@@ -95,23 +98,38 @@ def main():
     if not os.path.isabs(cfg.label_map_path):
         cfg.label_map_path = os.path.join(cfg.output_dir, os.path.basename(cfg.label_map_path))
 
-    best_onnx_name = os.path.basename(getattr(cfg, "best_onnx_model_path", "best_model.onnx"))
-    if not os.path.isabs(getattr(cfg, "best_onnx_model_path", "")):
-        cfg.best_onnx_model_path = os.path.join(cfg.output_dir, best_onnx_name)
+    best_onnx_raw_path = getattr(cfg, "best_onnx_model_path", "full_model.onnx")
+    best_onnx_name = os.path.basename(best_onnx_raw_path)
+    if os.path.isabs(best_onnx_raw_path):
+        onnx_dir = os.path.dirname(best_onnx_raw_path) or cfg.output_dir
+    else:
+        onnx_dir = cfg.output_dir
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    timestamp = datetime.now().strftime("%Y%m%d%H")
+    stem, ext = os.path.splitext(best_onnx_name)
+    if not stem:
+        stem = "full_model"
+    if not ext:
+        ext = ".onnx"
+
+    os.makedirs(onnx_dir, exist_ok=True)
+    cfg.best_onnx_model_path = os.path.join(onnx_dir, f"{stem}_{timestamp}{ext}")
+
+    print(torch.cuda.is_available())
+
+    device = torch.device("cuda")
 
     input_folder=cfg.image_root_dir
     output_csv=cfg.data_csv_path
 
     
 
-    subprocess.run([
-        "python", "train_classifier/ocr_paddle.py",
-        "--input_folder", cfg.image_root_dir,
-        "--output_csv", cfg.data_csv_path,
-        "--num_workers", "60"
-    ])
+    # subprocess.run([
+    #     "python", "train_classifier/ocr_paddle.py",
+    #     "--input_folder", cfg.image_root_dir,
+    #     "--output_csv", cfg.data_csv_path,
+    #     "--num_workers", "50"
+    # ])
 
     # Dataframe & label map
     df, label_to_id = load_and_prepare_dataframe(
@@ -243,7 +261,9 @@ def main():
             },
             opset_version=18,
         )
-
+    s3_handler.upload_file(cfg.best_onnx_model_path, f"outputs_training/{os.path.basename(cfg.best_onnx_model_path)}")
+    s3_handler.upload_file(cfg.label_map_path, f"outputs_training/{os.path.basename(cfg.label_map_path)}")
+    s3_handler.upload_file(cfg.best_state_dict_path, f"outputs_training/{os.path.basename(cfg.best_state_dict_path)}")
     print(f"✅ ONNX model saved at {cfg.best_onnx_model_path}")
 
 

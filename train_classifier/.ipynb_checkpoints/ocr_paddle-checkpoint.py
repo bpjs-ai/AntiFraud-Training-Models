@@ -39,6 +39,9 @@ def worker_extract(args):
             lang='id',
             det_db_unclip_ratio=2,
             show_log=False,
+            det_model_dir="paddlemodel/whl/det/en/en_PP-OCRv3_det_infer",
+            rec_model_dir="paddlemodel/whl/rec/latin/latin_PP-OCRv3_rec_infer",
+            cls_model_dir="paddlemodel/whl/cls/ch_ppocr_mobile_v2.0_cls_infer",
             use_gpu=True
         )
 

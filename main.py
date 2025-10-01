@@ -27,13 +27,12 @@ from train_signature.download_dataset import download_dataset
 
 def setup_logging(output_dir: Path) -> logging.Logger:
     """Setup logging configuration."""
-    log_file = output_dir / f"pipeline_{datetime.now().strftime('%Y%m%d%H')}.log"
+    # log_file = output_dir / f"pipeline_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
     
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(levelname)s - %(message)s',
         handlers=[
-            logging.FileHandler(log_file),
             logging.StreamHandler(sys.stdout)
         ]
     )
@@ -78,12 +77,15 @@ def parse_args() -> argparse.Namespace:
         help="Skip dataset download and use existing data"
     )
     
-    # Classifier specific arguments
-    parser.add_argument(
-        "--classifier_config",
-        type=str,
-        help="Path to classifier configuration JSON file"
-    )
+    parser.add_argument("--val_size", type=float, default=None)
+    parser.add_argument("--epochs", type=int, default=None)
+    parser.add_argument("--batch_size", type=int, default=None)
+    parser.add_argument("--num_workers", type=int, default=None)
+    parser.add_argument("--lr_bert", type=float, default=None)
+    parser.add_argument("--lr_resnet", type=float, default=None)
+    parser.add_argument("--lr_heads", type=float, default=None)
+    parser.add_argument("--bert_model_name", type=str, default=None)
+
     
     # Signature specific arguments  
     parser.add_argument(
@@ -170,8 +172,8 @@ def download_datasets(args: argparse.Namespace) -> bool:
 def training_classifier(args: argparse.Namespace, logger: logging.Logger) -> bool:
     """Execute classifier training pipeline."""
     logger.info("🚀 Starting Classifier Training Pipeline")
-
     print("\n=== Downloading Classifier Dataset ===")
+    # jangan dihapus
     # try:
     #     classifier_path = download_dataset(
     #         dataset_type="classifier",
@@ -181,52 +183,53 @@ def training_classifier(args: argparse.Namespace, logger: logging.Logger) -> boo
     #     print(f"Classifier dataset downloaded to: {classifier_path}")
     # except Exception as e:
     #     print(f"Error downloading classifier dataset: {e}")
-    
     try:
-        
-        # Prepare classifier arguments
         classifier_args = []
-        
-        # Add output directory
-        classifier_output_dir = Path(args.output_dir) / "classifier" / datetime.now().strftime('%Y%m%d%H')
+
+        # output_dir khusus tiap run
+        classifier_output_dir = Path(args.output_dir) / "classifier" / datetime.now().strftime('%Y%m%d_%H%M%S')
         classifier_args.extend(["--output_dir", str(classifier_output_dir)])
-        
-        # Add config if provided
-        if args.classifier_config:
-            classifier_args.extend(["--config", args.classifier_config])
-        
-        # Set default paths if no config provided
-        if not args.classifier_config:
-            classifier_args.extend([
-                "--data_csv_path", "dataset/classifier/data.csv",
-                "--image_root_dir", "dataset/classifier"
-            ])
-        
-        # Override sys.argv for classifier main
-        original_argv = sys.argv.copy()
-        sys.argv = ["main_classifier.py"] + classifier_args
-        
-        logger.info(f"🔧 Running classifier with args: {classifier_args}")
-        
-        # Run classifier training
-        classifier_main()
-        
-        # Restore original argv
-        sys.argv = original_argv
-        
+
+        mapping = {
+            "data_csv_path": "--data_csv_path",
+            "image_root_dir": "--image_root_dir",
+            "val_size": "--val_size",
+            "epochs": "--epochs",
+            "batch_size": "--batch_size",
+            "num_workers": "--num_workers",
+            "lr_bert": "--lr_bert",
+            "lr_resnet": "--lr_resnet",
+            "lr_heads": "--lr_heads",
+            "bert_model_name": "--bert_model_name",
+            # "config": "--config",  # hapus kalau tidak ada di parse_args
+        }
+
+        for attr, flag in mapping.items():
+            val = getattr(args, attr, None)
+            if val is not None:
+                classifier_args.extend([flag, str(val)])
+
+        original_argv = sys.argv[:]
+        try:
+            sys.argv = ["main_classifier.py"] + classifier_args
+            logger.info(f"🔧 Running classifier with args: {classifier_args}")
+            classifier_main()
+        finally:
+            sys.argv = original_argv
+
         logger.info("✅ Classifier training completed successfully")
         return True
-        
+
     except Exception as e:
         logger.error(f"❌ Classifier training failed: {str(e)}")
         return False
-
 
 def training_signature(args: argparse.Namespace, logger: logging.Logger) -> bool:
     """Execute signature training pipeline."""
     logger.info("🚀 Starting Signature Training Pipeline")
 
     print("\n=== Downloading Signature Dataset ===")
+    # jangan dihapus
     # try:
     #     signature_path = download_dataset(
     #         dataset_type="signature",
@@ -243,7 +246,7 @@ def training_signature(args: argparse.Namespace, logger: logging.Logger) -> bool
         signature_args = []
         
         # Add output directory
-        signature_output_dir = Path(args.output_dir) / "signature" / datetime.now().strftime('%Y%m%d%H')
+        signature_output_dir = Path(args.output_dir) / "signature" / datetime.now().strftime('%Y%m%d_%H%M%S')
         signature_args.extend(["--out-dir", str(signature_output_dir)])
         
         # Add signature specific arguments

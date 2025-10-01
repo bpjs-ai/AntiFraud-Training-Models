@@ -1,0 +1,40 @@
+# ---- Base (GPU) ----
+FROM pytorch/pytorch:2.4.0-cuda12.1-cudnn9-runtime
+
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    HF_HOME=/root/.cache/huggingface \
+    TORCH_HOME=/root/.cache/torch
+
+WORKDIR /app
+
+# System dependencies for OpenCV/Paddle runtime
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1 \
+    libglib2.0-0 \
+    libxrender1 \
+    libxext6 \
+    libsm6 \
+    libgomp1 \
+    ccache \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
+
+
+COPY requirements.txt ./
+RUN python -m pip install --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -r requirements.txt
+
+RUN python -c "from transformers import AutoModel; AutoModel.from_pretrained('indobenchmark/indobert-base-p2')" && \
+    python -c "from torchvision.models import resnet50, ResNet50_Weights; resnet50(weights=ResNet50_Weights.IMAGENET1K_V1)"
+
+# ---- Runtime (GPU) ----
+FROM base-gpu AS runtime-gpu
+WORKDIR /app
+COPY . .
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c "import torch; print('CUDA available:', torch.cuda.is_available())" || exit 1
+
+CMD ["python", "main.py", "--pipeline", "classifier", "--dataset-dir", "/app/dataset", "--output_dir", "/app/outputs"]
