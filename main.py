@@ -174,15 +174,15 @@ def training_classifier(args: argparse.Namespace, logger: logging.Logger) -> boo
     logger.info("🚀 Starting Classifier Training Pipeline")
     print("\n=== Downloading Classifier Dataset ===")
     # jangan dihapus
-    # try:
-    #     classifier_path = download_dataset(
-    #         dataset_type="classifier",
-    #         s3_prefix="dataset/classifier/",  # Replace with actual S3 prefix
-    #         local_base_dir=""  # Current directory
-    #     )
-    #     print(f"Classifier dataset downloaded to: {classifier_path}")
-    # except Exception as e:
-    #     print(f"Error downloading classifier dataset: {e}")
+    try:
+        classifier_path = download_dataset(
+            dataset_type="classifier",
+            s3_prefix="dataset/classifier/",  # Replace with actual S3 prefix
+            local_base_dir=""  # Current directory
+        )
+        print(f"Classifier dataset downloaded to: {classifier_path}")
+    except Exception as e:
+        print(f"Error downloading classifier dataset: {e}")
     try:
         classifier_args = []
 
