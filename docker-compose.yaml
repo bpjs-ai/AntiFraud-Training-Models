@@ -8,6 +8,7 @@ services:
       dockerfile: Dockerfile.training
       target: runtime-gpu
     image: antifraud-training-app
+    shm_size: "2g"
     container_name: antifraud_training_gpu
     restart: unless-stopped
     command: python main.py --pipeline classifier --dataset-dir /app/dataset --output_dir /app/outputs
@@ -15,20 +16,26 @@ services:
       - ./dataset:/app/dataset
       - ./outputs:/app/outputs
       - ./paddle_models:/app/paddle_models
+      - model_cache_hf:/root/.cache/huggingface
+      - model_cache_torch:/root/.cache/torch
     env_file:
       - .env
     environment:
+      - HF_HOME=/root/.cache/huggingface
+      - TORCH_HOME=/root/.cache/torch
       - PADDLEOCR_HOME=/app/.paddleocr
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
 
 
-    # Note: GPU on Compose depends on Docker host support.
-    # Prefer: docker run --gpus all ... or run on Kubernetes.
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu]
+    # services:
+    #   antifraud_training_gpu:
+    #     image: antifraud_training_gpu:latest
+    #     deploy:
+    #       resources:
+    #         reservations:
+    #           devices:
+    #             - driver: nvidia
+    #               count: all
+    #               capabilities: [gpu]
+    #     runtime: nvidia   # opsional di beberapa versi Docker
