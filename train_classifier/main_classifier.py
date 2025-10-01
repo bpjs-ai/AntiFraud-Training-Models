@@ -125,12 +125,12 @@ def main():
 
     
 
-    # subprocess.run([
-    #     "python", "train_classifier/ocr_paddle.py",
-    #     "--input_folder", cfg.image_root_dir,
-    #     "--output_csv", cfg.data_csv_path,
-    #     "--num_workers", "50"
-    # ])
+    subprocess.run([
+        "python", "train_classifier/ocr_paddle.py",
+        "--input_folder", cfg.image_root_dir,
+        "--output_csv", cfg.data_csv_path,
+        "--num_workers", "50"
+    ])
 
     # Dataframe & label map
     df, label_to_id = load_and_prepare_dataframe(
