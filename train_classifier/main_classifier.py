@@ -115,7 +115,10 @@ def main():
     os.makedirs(onnx_dir, exist_ok=True)
     cfg.best_onnx_model_path = os.path.join(onnx_dir, f"{stem}_{timestamp}{ext}")
 
+    print(torch.cuda.is_available())
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
 
     input_folder=cfg.image_root_dir
     output_csv=cfg.data_csv_path
@@ -126,7 +129,7 @@ def main():
         "python", "train_classifier/ocr_paddle.py",
         "--input_folder", cfg.image_root_dir,
         "--output_csv", cfg.data_csv_path,
-        "--num_workers", "60"
+        "--num_workers", "50"
     ])
 
     # Dataframe & label map
