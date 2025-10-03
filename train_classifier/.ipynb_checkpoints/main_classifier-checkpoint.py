@@ -32,8 +32,8 @@ def parse_args():
     parser.add_argument("--config", type=str, default=None, help="Path to JSON config file")
 
     # Allow override via CLI
-    parser.add_argument("--data_csv_path", type=str, default="dataset/classifier/data.csv")
-    parser.add_argument("--image_root_dir", type=str, default="dataset/classifier")
+    parser.add_argument("--data_csv_path", type=str, default="dataset/data.csv")
+    parser.add_argument("--image_root_dir", type=str, default="dataset")
     parser.add_argument("--val_size", type=float, default=None)
     parser.add_argument("--epochs", type=int, default=None)
     parser.add_argument("--batch_size", type=int, default=None)
@@ -264,7 +264,6 @@ def main():
         )
     s3_handler.upload_file(cfg.best_onnx_model_path, f"outputs_training/{os.path.basename(cfg.best_onnx_model_path)}")
     s3_handler.upload_file(cfg.label_map_path, f"outputs_training/{os.path.basename(cfg.label_map_path)}")
-    s3_handler.upload_file(cfg.best_state_dict_path, f"outputs_training/{os.path.basename(cfg.best_state_dict_path)}")
     print(f"✅ ONNX model saved at {cfg.best_onnx_model_path}")
 
 

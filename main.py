@@ -84,20 +84,19 @@ def parse_args() -> argparse.Namespace:
 
 def download_classifier_dataset(args: argparse.Namespace, logger: logging.Logger) -> None:
     """Download the classifier dataset from S3 when configured."""
-    if args.classifier_mode != "full":
-        logger.info("Skipping dataset download because classifier_mode='%s' does not require it.", args.classifier_mode)
-        return
 
     if args.skip_download:
         logger.info("Skipping classifier dataset download because --skip_download is set.")
         return
 
-    prefix = os.getenv("S3_CLASSIFIER_PREFIX")
-    if not prefix:
-        logger.info("Environment variable S3_CLASSIFIER_PREFIX is not set; skipping dataset download.")
+    # default prefix untuk dataset classifier (hanya dibutuhkan untuk full training)
+    if args.classifier_mode == "full":
+        prefix = "dataset/classifier"
+    else:
+        logger.info("Skipping dataset download because classifier_mode='%s' does not require it.", args.classifier_mode)
         return
 
-    target_dir = Path(args.dataset_dir) / "classifier" / "namadocs"
+    target_dir = Path(args.dataset_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
 
     try:
@@ -114,6 +113,7 @@ def download_classifier_dataset(args: argparse.Namespace, logger: logging.Logger
     except Exception as exc:  # noqa: BLE001
         logger.error("Failed to download classifier dataset from S3: %s", exc)
         logger.info("Continuing with local dataset only.")
+
 
 
 def build_common_classifier_args(args: argparse.Namespace, run_output_dir: Path) -> List[str]:

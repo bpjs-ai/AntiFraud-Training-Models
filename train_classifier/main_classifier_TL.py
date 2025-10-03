@@ -25,7 +25,7 @@ from train_classifier.dataset import (
     split_dataframe,
 )
 from train_classifier.model import HybridModel
-from train_classifier.ocr_paddle import process_folder_multiprocessing
+import subprocess
 from train_classifier.train_utils import (
     build_optimizer,
     build_scheduler,
@@ -33,6 +33,7 @@ from train_classifier.train_utils import (
     save_label_mapping,
     train_one_epoch,
 )
+from utils.s3_utils import S3Handler
 
 
 CLASSIFIER_HEAD_WEIGHT_KEY = "fusion.8.weight"
@@ -78,7 +79,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--image_root_dir",
         type=str,
-        default="dataset/dataset_TL",
+        default="dataset",
         help="Root directory of the transfer learning dataset (default: dataset/dataset_TL).",
     )
     parser.add_argument(
@@ -247,16 +248,6 @@ def build_class_weights(labels: np.ndarray, num_classes: int, device: torch.devi
     return weights
 
 
-def run_ocr(image_root_dir: str, csv_path: str, num_workers: int) -> None:
-    """Run OCR on the dataset folder when the CSV file is not present."""
-    if os.path.exists(csv_path):
-        print(f"[INFO] Found existing CSV at {csv_path}, skipping OCR.")
-        return
-
-    print(f"[INFO] Running OCR on {image_root_dir} to generate {csv_path}.")
-    process_folder_multiprocessing(image_root_dir, csv_path, num_workers=num_workers)
-
-
 def load_pretrained_weights(
     model: nn.Module,
     state_dict_path: str,
@@ -307,6 +298,7 @@ def load_pretrained_weights(
 
 def main() -> None:
     args = parse_arguments()
+    s3_handler = S3Handler()
 
     os.makedirs(args.output_dir, exist_ok=True)
 
@@ -364,8 +356,13 @@ def main() -> None:
     else:
         print("[WARNING] Previous label map could not be loaded. The model will be fine-tuned only on the new dataset classes.")
 
-    run_ocr(args.image_root_dir, args.data_csv_path, num_workers=args.num_workers)
-
+    subprocess.run([
+        "python", "train_classifier/ocr_paddle.py",
+        "--input_folder", args.image_root_dir,
+        "--output_csv", args.data_csv_path,
+        "--num_workers", "50"
+    ])
+    
     df, _ = load_and_prepare_dataframe(
         data_csv_path=args.data_csv_path,
         image_root_dir=args.image_root_dir,
@@ -516,6 +513,9 @@ def main() -> None:
             },
             opset_version=18,
         )
+        s3_handler.upload_file(cfg.best_onnx_model_path, f"outputs_training/{os.path.basename(cfg.best_onnx_model_path)}")
+        s3_handler.upload_file(cfg.label_map_path, f"outputs_training/{os.path.basename(cfg.label_map_path)}")
+        print(f"✅ ONNX model saved at {cfg.best_onnx_model_path}")
         print(f"[INFO] ONNX model exported to {onnx_path}")
 
 

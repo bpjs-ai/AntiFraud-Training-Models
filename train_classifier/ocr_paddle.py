@@ -79,7 +79,8 @@ def get_all_image_paths(root_folder):
 
 def process_folder_multiprocessing(root_folder, output_csv, num_workers=None):
     image_paths = get_all_image_paths(root_folder)
-    print(f"Processing {len(image_paths)} images with multiprocessing...")
+    total = len(image_paths)
+    print(f"Processing {total} images with multiprocessing...")
 
     if num_workers is None:
         num_workers = max(1, mp.cpu_count() - 1)
@@ -89,8 +90,11 @@ def process_folder_multiprocessing(root_folder, output_csv, num_workers=None):
         writer.writerow(['filename', 'label', 'text'])
 
         with mp.Pool(processes=num_workers) as pool:
-            for result in tqdm(pool.imap(worker_extract, image_paths), total=len(image_paths), desc="Processing Images"):
+            for idx, result in enumerate(pool.imap(worker_extract, image_paths), start=1):
                 writer.writerow(result)
+                # cetak progress tiap 100
+                if idx % 100 == 0 or idx == total:
+                    print(f"Processed {idx}/{total} images")
 
 
 if __name__ == '__main__':

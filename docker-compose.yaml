@@ -13,7 +13,7 @@ services:
     volumes:
       - ./dataset:/app/dataset
       - ./outputs:/app/outputs
-      - ./paddlemodel:/app/paddlemodel
+      - paddlemodel:/app/paddlemodel
       - model_cache_hf:/root/.cache/huggingface
       - model_cache_torch:/root/.cache/torch
     env_file:
@@ -25,6 +25,13 @@ services:
       - HF_HOME=/root/.cache/huggingface
       - TORCH_HOME=/root/.cache/torch
       - PADDLEOCR_HOME=/app/.paddleocr
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["2"]      # <-- hanya expose GPU index 2
+              capabilities: [gpu]
 
   training-transfer-pytorch:
     profiles:
@@ -40,7 +47,7 @@ services:
     volumes:
       - ./dataset:/app/dataset
       - ./outputs:/app/outputs
-      - ./paddlemodel:/app/paddlemodel
+      - paddlemodel:/app/paddlemodel
       - model_cache_hf:/root/.cache/huggingface
       - model_cache_torch:/root/.cache/torch
     env_file:
@@ -54,6 +61,13 @@ services:
       - HF_HOME=/root/.cache/huggingface
       - TORCH_HOME=/root/.cache/torch
       - PADDLEOCR_HOME=/app/.paddleocr
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["2"]      # <-- juga lock ke GPU ke-3
+              capabilities: [gpu]
 
 volumes:
   model_cache_hf:
