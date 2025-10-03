@@ -73,7 +73,7 @@ spec:
               name: anti-fraud-config
               key: S3_BUCKET_NAME
         - name: CUDA_VISIBLE_DEVICES
-          value: "3"
+          value: "0"
         - name: PYTHONDONTWRITEBYTECODE
           valueFrom:
             configMapKeyRef:
