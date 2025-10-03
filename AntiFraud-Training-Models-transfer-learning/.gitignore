@@ -1,0 +1,13 @@
+*.ipynb
+*.pyc
+*.pt
+*.png
+*.jpg
+*.zip
+*.txt
+*.onnx
+*.log
+*.csv
+.env
+__pycache__
+*.ipynb_checkpoints
