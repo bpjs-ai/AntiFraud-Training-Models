@@ -1,15 +1,17 @@
 services:
-  training-full-pytorch:
+  training-app-pytorch:
     profiles:
       - gpu
     build:
       context: .
       dockerfile: Dockerfile.pytorch
       target: runtime-gpu
-    image: antifraud-training-full
+    image: training-app-pytorch
     shm_size: "2g"
-    container_name: antifraud_training_full
+    container_name: training-app-pytorch
     restart: unless-stopped
+    command: >
+      python main.py --classifier_mode full --epochs 5
     volumes:
       - ./dataset:/app/dataset
       - ./outputs:/app/outputs
@@ -31,42 +33,6 @@ services:
           devices:
             - driver: nvidia
               device_ids: ["2"]      # <-- hanya expose GPU index 2
-              capabilities: [gpu]
-
-  training-transfer-pytorch:
-    profiles:
-      - gpu
-    build:
-      context: .
-      dockerfile: Dockerfile.pytorch_TL
-      target: runtime-gpu
-    image: antifraud-training-transfer
-    shm_size: "2g"
-    container_name: antifraud_training_transfer
-    restart: unless-stopped
-    volumes:
-      - ./dataset:/app/dataset
-      - ./outputs:/app/outputs
-      - paddlemodel:/app/paddlemodel
-      - model_cache_hf:/root/.cache/huggingface
-      - model_cache_torch:/root/.cache/torch
-    env_file:
-      - .env
-    environment:
-      - CLASSIFIER_MODE=transfer
-      - DATASET_DIR=/app/dataset
-      - IMAGE_ROOT_DIR=/app/dataset/dataset_TL
-      - DATA_CSV_PATH=/app/dataset/dataset_TL.csv
-      - OUTPUT_DIR=/app/outputs
-      - HF_HOME=/root/.cache/huggingface
-      - TORCH_HOME=/root/.cache/torch
-      - PADDLEOCR_HOME=/app/.paddleocr
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              device_ids: ["2"]      # <-- juga lock ke GPU ke-3
               capabilities: [gpu]
 
 volumes:
