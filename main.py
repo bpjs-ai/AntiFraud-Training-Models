@@ -82,21 +82,38 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+import shutil
+from pathlib import Path
+import argparse
+import logging
+
 def download_classifier_dataset(args: argparse.Namespace, logger: logging.Logger) -> None:
     """Download the classifier dataset from S3 when configured."""
 
-    if args.skip_download:
-        logger.info("Skipping classifier dataset download because --skip_download is set.")
+
+    if args.classifier_mode not in ("full", "transfer"):
+        logger.info(
+            "Skipping dataset download karena classifier_mode='%s' tidak membutuhkannya.",
+            args.classifier_mode,
+        )
         return
 
-    # default prefix untuk dataset classifier (hanya dibutuhkan untuk full training)
-    if args.classifier_mode == "full" or args.classifier_mode == "transfer":
-        prefix = "dataset/classifier"
-    else:
-        logger.info("Skipping dataset download karena classifier_mode='%s' tidak membutuhkannya.", args.classifier_mode)
-        return
-
+    prefix = "dataset/classifier"
     target_dir = Path(args.dataset_dir)
+
+    # --- 🔹 HAPUS SEMUA YANG ADA DI dataset/* ---
+    dataset_root = Path("dataset")
+    if dataset_root.exists():
+        for item in dataset_root.iterdir():
+            try:
+                if item.is_dir():
+                    shutil.rmtree(item)
+                else:
+                    item.unlink()
+                logger.info("Removed %s", item)
+            except Exception as exc:
+                logger.warning("Failed to remove %s: %s", item, exc)
+
     target_dir.mkdir(parents=True, exist_ok=True)
 
     try:
@@ -113,7 +130,6 @@ def download_classifier_dataset(args: argparse.Namespace, logger: logging.Logger
     except Exception as exc:  # noqa: BLE001
         logger.error("Failed to download classifier dataset from S3: %s", exc)
         logger.info("Continuing with local dataset only.")
-
 
 
 def build_common_classifier_args(args: argparse.Namespace, run_output_dir: Path) -> List[str]:
