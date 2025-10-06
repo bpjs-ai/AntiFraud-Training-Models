@@ -90,10 +90,10 @@ def download_classifier_dataset(args: argparse.Namespace, logger: logging.Logger
         return
 
     # default prefix untuk dataset classifier (hanya dibutuhkan untuk full training)
-    if args.classifier_mode == "full":
+    if args.classifier_mode == "full" or args.classifier_mode == "transfer":
         prefix = "dataset/classifier"
     else:
-        logger.info("Skipping dataset download because classifier_mode='%s' does not require it.", args.classifier_mode)
+        logger.info("Skipping dataset download karena classifier_mode='%s' tidak membutuhkannya.", args.classifier_mode)
         return
 
     target_dir = Path(args.dataset_dir)
