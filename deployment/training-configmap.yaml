@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: anti-fraud-training-config
+  namespace: test-mdi
+data:
+  # CUDA_VISIBLE_DEVICES: "3"
+  YOLO_CONFIG_DIR: "/home/appuser/.config/Ultralytics"
+  NVIDIA_VISIBLE_DEVICES: "GPU-f7e0d148-e210-fc33-43dc-1104a5faeea7"

@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: anti-fraud-training-model-cache-pvc
+  namespace: test-mdi
+  labels:
+    app: anti-fraud-training
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 50Gi
+  storageClassName: longhorn

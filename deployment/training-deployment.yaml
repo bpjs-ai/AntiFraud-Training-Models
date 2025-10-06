@@ -1,0 +1,122 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: anti-fraud-training-deployment
+  namespace: test-mdi
+  labels:
+    app: anti-fraud-training
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: anti-fraud-training
+  template:
+    metadata:
+      labels:
+        app: anti-fraud-training
+    spec:
+      imagePullSecrets:
+      - name: ghcr-secret
+      nodeSelector:
+        kubernetes.io/hostname: srv9-baremetal-gpu-03
+      containers:
+      - name: anti-fraud-training
+        image: ghcr.io/bpjs-ai/training-ai:1.0.0
+        ports:
+        - containerPort: 8050
+        command: ["python", "main.py"]
+        args:
+          - "--pipeline"
+          - "classifier"
+          - "--dataset-dir"
+          - "/app/dataset"
+          - "--output_dir"
+          - "/app/outputs"
+        volumeMounts:
+        - mountPath: /app/dataset
+          name: dataset-volume
+        - mountPath: /app/outputs
+          name: outputs-volume
+        - mountPath: /root/.cache/huggingface
+          name: model-cache
+          subPath: huggingface
+        - mountPath: /root/.cache/torch
+          name: model-cache
+          subPath: torch
+        - mountPath: /dev/shm
+          name: dshm
+        env:
+        - name: HF_HOME
+          value: "/root/.cache/huggingface"
+        - name: TORCH_HOME
+          value: "/root/.cache/torch"
+        - name: PADDLEOCR_HOME
+          value: "/app/.paddleocr"
+        - name: S3_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: anti-fraud-config
+              key: S3_ENDPOINT
+        - name: S3_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: anti-fraud-secrets
+              key: S3_ACCESS_KEY
+        - name: S3_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: anti-fraud-secrets
+              key: S3_SECRET_KEY
+        - name: S3_BUCKET_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: anti-fraud-config
+              key: S3_BUCKET_NAME
+        - name: CUDA_VISIBLE_DEVICES
+          value: "0"
+        - name: PYTHONDONTWRITEBYTECODE
+          valueFrom:
+            configMapKeyRef:
+              name: anti-fraud-config
+              key: PYTHONDONTWRITEBYTECODE
+        - name: CUDA_LAUNCH_BLOCKING
+          valueFrom:
+            configMapKeyRef:
+              name: anti-fraud-config
+              key: CUDA_LAUNCH_BLOCKING
+        resources:
+          requests:
+            cpu: "24000m"
+            memory: "48Gi"
+            nvidia.com/gpu: 1
+          limits:
+            cpu: "48000m"
+            memory: "96Gi"
+            nvidia.com/gpu: 1
+      volumes:
+      - name: dataset-volume
+        hostPath:
+          path: /mnt/data/antifraud/dataset
+          type: DirectoryOrCreate
+      - name: outputs-volume
+        hostPath:
+          path: /mnt/data/antifraud/outputs
+          type: DirectoryOrCreate
+      - name: model-cache
+        persistentVolumeClaim:
+          claimName: anti-fraud-training-model-cache-pvc
+      - name: dshm
+        emptyDir:
+          medium: Memory
+          sizeLimit: 2Gi
+      initContainers:
+        - name: fix-permissions
+          image: busybox
+          command: ["sh", "-c", "chown -R 0:0 /root/.cache/huggingface /root/.cache/torch && chmod -R 755 /root/.cache"]
+          volumeMounts:
+            - mountPath: /root/.cache/huggingface
+              name: model-cache
+              subPath: huggingface
+            - mountPath: /root/.cache/torch
+              name: model-cache
+              subPath: torch 
