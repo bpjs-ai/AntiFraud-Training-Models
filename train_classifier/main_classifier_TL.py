@@ -1,108 +1,92 @@
-"""
-Transfer Learning Pipeline for Hybrid OCR Classifier
-==================================================
+﻿"""Transfer learning pipeline for the Hybrid OCR classifier.
 
-This script provides a training pipeline tailored for transfer learning when
-adding new classes to an existing Hybrid OCR classifier.  It reuses a
-pre‑trained model, loads its state dictionary, and fine‑tunes (or trains
-only the classification head) on a new dataset without training from
-scratch.
-
-Key features:
-
-* **OCR Preprocessing** – Uses the provided ``ocr_paddle.py`` to run
-  PaddleOCR over your image dataset and produce a CSV of filenames,
-  labels and extracted text.  This step is optional if you already have
-  a prepared CSV.
-* **Flexible Freezing** – By default the BERT and ResNet backbones are
-  frozen so only the classification head and attention fusion layers are
-  updated.  You can override this behaviour with command line flags.
-* **State Dict Loading** – Loads as much of the pre‑trained model as
-  possible.  Layers whose shapes differ (such as the final classifier
-  when the number of classes changes) are left randomly initialised.
-
-Usage example:
-
-.. code-block:: bash
-
-    python transfer_learning.py \
-        --state_dict_path outputs/classifier/state_dict.pt \
-        --image_root_dir dataset_new \
-        --data_csv_path dataset_new.csv \
-        --output_dir outputs_transfer \
-        --freeze_backbone
-
-Assumptions:
-
-* Your new dataset is arranged in ``image_root_dir/class_name/filename.png``.
-* Each image will be assigned a ``label`` equal to its immediate parent
-  directory name.  Multiple classes are supported.
-* The script will generate a ``dataset_new.csv`` file if one does not
-  already exist.
-
-This file resides at project root and can be run directly with
-``python transfer_learning.py``.  It depends on ``dataset.py``,
-``model.py``, ``train_utils.py`` and ``ocr_paddle.py`` located in the
-same repository.
+This script fine-tunes a previously trained model on a new dataset while keeping
+existing classes intact. It can add new classes on top of the previous label
+set and will reuse the pretrained weights downloaded from S3 by default.
 """
 
 import argparse
-import os
 import json
+import os
 from datetime import datetime
-from typing import Dict
+from typing import Dict, List, Optional, Tuple
 
+import numpy as np
 import torch
 import torch.nn as nn
+from sklearn.utils.class_weight import compute_class_weight
 
-from dataset import (
+from utils.s3_utils import S3Handler
+from train_classifier.dataset import (
     build_dataloaders,
     build_tokenizer,
     build_transforms,
     load_and_prepare_dataframe,
     split_dataframe,
 )
-from model import HybridModel
-from train_utils import (
+from train_classifier.model import HybridModel
+import subprocess
+from train_classifier.train_utils import (
     build_optimizer,
     build_scheduler,
-    compute_weights,
     evaluate,
     save_label_mapping,
     train_one_epoch,
 )
+from utils.s3_utils import S3Handler
 
-# We import the OCR helper to generate CSVs from raw images.  This
-# function is defined in ocr_paddle.py and wrapped here for convenience.
-from ocr_paddle import process_folder_multiprocessing
+
+CLASSIFIER_HEAD_WEIGHT_KEY = "fusion.8.weight"
+CLASSIFIER_HEAD_BIAS_KEY = "fusion.8.bias"
 
 
 def parse_arguments() -> argparse.Namespace:
     """Parse command line arguments for the transfer learning pipeline."""
     parser = argparse.ArgumentParser(
-        description="Fine tune a pre‑trained Hybrid OCR classifier on new data."
+        description="Fine-tune a pretrained Hybrid OCR classifier on new data."
     )
 
-    # Required arguments
     parser.add_argument(
         "--state_dict_path",
         type=str,
-        required=True,
-        help="Path to the pre‑trained model's state_dict.pt file",
+        default=None,
+        help="Local path to a pretrained state_dict. If omitted the artifact will be downloaded from S3.",
+    )
+    parser.add_argument(
+        "--state_dict_s3_key",
+        type=str,
+        default="outputs_training/state_dict.pt",
+        help="S3 key to download the pretrained state_dict when --state_dict_path is not provided.",
+    )
+    parser.add_argument(
+        "--previous_label_map_path",
+        type=str,
+        default=None,
+        help="Optional local path to the previous label2id mapping. Overrides the S3 download if provided.",
+    )
+    parser.add_argument(
+        "--label_map_s3_key",
+        type=str,
+        default="outputs_training/label2id.json",
+        help="S3 key to download the previous label2id mapping when no local path is provided.",
+    )
+    parser.add_argument(
+        "--artifact_dir",
+        type=str,
+        default="pretrained_artifacts",
+        help="Directory used to cache artifacts downloaded from S3.",
     )
     parser.add_argument(
         "--image_root_dir",
         type=str,
-        required=True,
-        help="Root directory of the new dataset. Images should be in subfolders named after their labels.",
+        default="dataset",
+        help="Root directory of the transfer learning dataset (default: dataset/dataset_TL).",
     )
-
-    # Optional arguments
     parser.add_argument(
         "--data_csv_path",
         type=str,
-        default="dataset_new.csv",
-        help="CSV file containing filename, label and text columns. If the file does not exist, it will be generated using OCR.",
+        default="dataset/dataset_TL.csv",
+        help="CSV file containing filename, label and text columns. Will be generated via OCR when missing.",
     )
     parser.add_argument(
         "--output_dir",
@@ -114,13 +98,13 @@ def parse_arguments() -> argparse.Namespace:
         "--epochs",
         type=int,
         default=10,
-        help="Number of fine tuning epochs (default: 10).",
+        help="Number of fine-tuning epochs (default: 10).",
     )
     parser.add_argument(
         "--batch_size",
         type=int,
         default=16,
-        help="Mini‑batch size for training and validation (default: 16).",
+        help="Mini-batch size for training and validation (default: 16).",
     )
     parser.add_argument(
         "--num_workers",
@@ -138,19 +122,19 @@ def parse_arguments() -> argparse.Namespace:
         "--lr_bert",
         type=float,
         default=0.0,
-        help="Learning rate for BERT parameters. Set to 0 to freeze BERT (default: 0).",
+        help="Learning rate for BERT parameters. Set to 0 to keep BERT frozen (default: 0).",
     )
     parser.add_argument(
         "--lr_resnet",
         type=float,
         default=0.0,
-        help="Learning rate for ResNet parameters. Set to 0 to freeze ResNet (default: 0).",
+        help="Learning rate for ResNet parameters. Set to 0 to keep ResNet frozen (default: 0).",
     )
     parser.add_argument(
         "--lr_heads",
         type=float,
         default=1e-4,
-        help="Learning rate for classification head and cross attention layers (default: 1e-4).",
+        help="Learning rate for classification head and cross-attention layers (default: 1e-4).",
     )
     parser.add_argument(
         "--val_size",
@@ -174,87 +158,212 @@ def parse_arguments() -> argparse.Namespace:
         "--early_stop_patience",
         type=int,
         default=5,
-        help="Number of epochs with no improvement after which training will be stopped (default: 5).",
+        help="Number of epochs without improvement before early stopping (default: 5).",
     )
     parser.add_argument(
         "--freeze_backbone",
         action="store_true",
-        help="Freeze BERT and ResNet entirely by zeroing their learning rates and disabling gradients.",
+        help="Freeze BERT and ResNet by disabling gradients for those modules.",
     )
     parser.add_argument(
         "--export_onnx",
         action="store_true",
-        help="If set, export the best model to ONNX format at the end of training.",
+        help="Export the best checkpoint to ONNX once training finishes.",
     )
 
     return parser.parse_args()
 
 
-def load_pretrained_weights(model: nn.Module, state_dict_path: str) -> None:
-    """Load a state dictionary into ``model``, ignoring mismatched shapes.
+def download_artifact(
+    s3_handler: Optional[S3Handler],
+    s3_key: Optional[str],
+    destination_dir: str,
+    description: str,
+) -> Tuple[Optional[S3Handler], Optional[str]]:
+    """Download an artifact from S3 and return the updated handler and local path."""
+    if not s3_key:
+        return s3_handler, None
 
-    Parameters
-    ----------
-    model: nn.Module
-        The model into which weights will be loaded.
-    state_dict_path: str
-        Path to the ``.pt`` file containing the saved state dictionary.
-    """
+    filename = os.path.basename(s3_key.rstrip("/"))
+    if not filename:
+        raise ValueError(f"Invalid S3 key '{s3_key}' for {description}.")
+
+    if s3_handler is None:
+        s3_handler = S3Handler()
+
+    os.makedirs(destination_dir, exist_ok=True)
+    local_path = os.path.join(destination_dir, filename)
+    success = s3_handler.download_file(s3_key, local_path)
+    if not success:
+        raise FileNotFoundError(
+            f"Unable to download {description} from s3://{s3_handler.bucket_name}/{s3_key}."
+        )
+
+    print(
+        f"[INFO] Downloaded {description} to {local_path} "
+        f"from s3://{s3_handler.bucket_name}/{s3_key}"
+    )
+    return s3_handler, local_path
+
+
+def load_label_mapping(path: str) -> Dict[str, int]:
+    """Load a label2id mapping from disk."""
+    with open(path, "r", encoding="utf-8") as file:
+        data = json.load(file)
+    return {str(label): int(idx) for label, idx in data.items()}
+
+
+def merge_label_mappings(
+    new_labels: List[str],
+    previous_mapping: Dict[str, int],
+) -> Dict[str, int]:
+    """Merge new labels into the previous mapping while keeping old indices."""
+    merged: Dict[str, int] = {}
+    max_existing_id = -1
+
+    if previous_mapping:
+        for label, idx in sorted(previous_mapping.items(), key=lambda item: item[1]):
+            merged[str(label)] = int(idx)
+            max_existing_id = max(max_existing_id, int(idx))
+
+    next_id = max_existing_id + 1
+    for label in sorted({str(label) for label in new_labels}):
+        if label not in merged:
+            merged[label] = next_id
+            next_id += 1
+
+    return merged
+
+
+def build_class_weights(labels: np.ndarray, num_classes: int, device: torch.device) -> torch.Tensor:
+    """Compute balanced class weights and fill missing classes with weight 1."""
+    weights = torch.ones(num_classes, dtype=torch.float32, device=device)
+    if labels.size == 0:
+        return weights
+
+    unique_labels = np.unique(labels)
+    class_weights = compute_class_weight(class_weight="balanced", classes=unique_labels, y=labels)
+    for label_idx, class_weight in zip(unique_labels, class_weights):
+        weights[int(label_idx)] = float(class_weight)
+    return weights
+
+
+def load_pretrained_weights(
+    model: nn.Module,
+    state_dict_path: str,
+    previous_mapping: Dict[str, int],
+    new_mapping: Dict[str, int],
+) -> None:
+    """Load pretrained weights while preserving logits for existing classes."""
     checkpoint = torch.load(state_dict_path, map_location="cpu")
     if isinstance(checkpoint, Dict) and "state_dict" in checkpoint:
-        # Some checkpoints may store weights under a 'state_dict' key
         checkpoint = checkpoint["state_dict"]
+
     model_dict = model.state_dict()
-    pretrained_dict = {}
-    for k, v in checkpoint.items():
-        if k in model_dict and model_dict[k].shape == v.shape:
-            pretrained_dict[k] = v
-    model_dict.update(pretrained_dict)
+
+    for key, value in checkpoint.items():
+        if key in (CLASSIFIER_HEAD_WEIGHT_KEY, CLASSIFIER_HEAD_BIAS_KEY):
+            continue
+        if key in model_dict and model_dict[key].shape == value.shape:
+            model_dict[key] = value
+
+    # Preserve classifier weights for existing labels
+    if CLASSIFIER_HEAD_WEIGHT_KEY in checkpoint and CLASSIFIER_HEAD_WEIGHT_KEY in model_dict:
+        old_weight = checkpoint[CLASSIFIER_HEAD_WEIGHT_KEY]
+        new_weight = model_dict[CLASSIFIER_HEAD_WEIGHT_KEY]
+        for label, old_idx in previous_mapping.items():
+            label_str = str(label)
+            if label_str not in new_mapping:
+                continue
+            new_idx = new_mapping[label_str]
+            if old_idx < old_weight.shape[0] and new_idx < new_weight.shape[0]:
+                new_weight[new_idx] = old_weight[old_idx]
+        model_dict[CLASSIFIER_HEAD_WEIGHT_KEY] = new_weight
+
+    if CLASSIFIER_HEAD_BIAS_KEY in checkpoint and CLASSIFIER_HEAD_BIAS_KEY in model_dict:
+        old_bias = checkpoint[CLASSIFIER_HEAD_BIAS_KEY]
+        new_bias = model_dict[CLASSIFIER_HEAD_BIAS_KEY]
+        for label, old_idx in previous_mapping.items():
+            label_str = str(label)
+            if label_str not in new_mapping:
+                continue
+            new_idx = new_mapping[label_str]
+            if old_idx < old_bias.shape[0] and new_idx < new_bias.shape[0]:
+                new_bias[new_idx] = old_bias[old_idx]
+        model_dict[CLASSIFIER_HEAD_BIAS_KEY] = new_bias
+
     model.load_state_dict(model_dict)
-
-
-def run_ocr(image_root_dir: str, csv_path: str, num_workers: int) -> None:
-    """Run OCR on the dataset folder if the CSV file does not exist.
-
-    Parameters
-    ----------
-    image_root_dir: str
-        Path to the root of the dataset where images are stored in
-        ``label/filename`` structure.
-    csv_path: str
-        Path to the CSV file that will contain three columns: filename,
-        label and text.  If this file already exists, OCR will not be
-        executed.
-    num_workers: int
-        Number of worker processes to use for OCR extraction.
-    """
-    if os.path.exists(csv_path):
-        print(f"[INFO] Found existing CSV at {csv_path}, skipping OCR.")
-        return
-    print(f"[INFO] Running OCR on {image_root_dir} to generate {csv_path}…")
-    process_folder_multiprocessing(image_root_dir, csv_path, num_workers=num_workers)
+    print(f"[INFO] Loaded pretrained weights from {state_dict_path}")
 
 
 def main() -> None:
     args = parse_arguments()
+    s3_handler = S3Handler()
 
-    # Ensure output directory exists
     os.makedirs(args.output_dir, exist_ok=True)
 
-    # Convert image size string to tuple
     try:
-        h_str, w_str = args.image_size.split(",")
-        image_size = (int(h_str), int(w_str))
-    except Exception:
-        raise ValueError("--image_size should be formatted as 'height,width', e.g., '224,224'")
+        height_str, width_str = args.image_size.split(",")
+        image_size = (int(height_str), int(width_str))
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError("--image_size should be formatted as 'height,width', e.g., '224,224'") from exc
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"[INFO] Using device: {device}")
 
-    # Step 1: Prepare data CSV via OCR if needed
-    run_ocr(args.image_root_dir, args.data_csv_path, num_workers=args.num_workers)
+    s3_handler: Optional[S3Handler] = None
 
-    # Step 2: Load dataframe and create label mapping for new dataset
-    df, label_to_id = load_and_prepare_dataframe(
+    state_dict_path = args.state_dict_path
+    if state_dict_path:
+        if not os.path.exists(state_dict_path):
+            raise FileNotFoundError(f"state_dict not found at {state_dict_path}")
+    else:
+        s3_handler, state_dict_path = download_artifact(
+            s3_handler,
+            args.state_dict_s3_key,
+            args.artifact_dir,
+            "pretrained state_dict",
+        )
+        if state_dict_path is None:
+            raise FileNotFoundError("Unable to obtain pretrained state_dict.")
+
+    previous_mapping: Dict[str, int] = {}
+    label_map_source = None
+    if args.previous_label_map_path:
+        if not os.path.exists(args.previous_label_map_path):
+            raise FileNotFoundError(
+                f"Previous label map not found at {args.previous_label_map_path}."
+            )
+        label_map_source = args.previous_label_map_path
+    elif args.label_map_s3_key:
+        try:
+            s3_handler, label_map_source = download_artifact(
+                s3_handler,
+                args.label_map_s3_key,
+                args.artifact_dir,
+                "previous label mapping",
+            )
+        except FileNotFoundError:
+            print(
+                f"[WARNING] Failed to download label map from S3 key '{args.label_map_s3_key}'. "
+                "Proceeding without the previous mapping."
+            )
+            label_map_source = None
+
+    if label_map_source and os.path.exists(label_map_source):
+        previous_mapping = load_label_mapping(label_map_source)
+        print(f"[INFO] Loaded previous label map containing {len(previous_mapping)} classes.")
+    else:
+        print("[WARNING] Previous label map could not be loaded. The model will be fine-tuned only on the new dataset classes.")
+
+    subprocess.run([
+        "python", "train_classifier/ocr_paddle.py",
+        "--input_folder", args.image_root_dir,
+        "--output_csv", args.data_csv_path,
+        "--num_workers", "50"
+    ])
+    
+    df, _ = load_and_prepare_dataframe(
         data_csv_path=args.data_csv_path,
         image_root_dir=args.image_root_dir,
         filename_col="filename",
@@ -262,13 +371,28 @@ def main() -> None:
         text_col="text",
         drop_empty_text=True,
     )
+    df["label"] = df["label"].astype(str)
 
-    # Step 3: Split into train/val
+    merged_mapping = merge_label_mappings(df["label"].tolist(), previous_mapping)
+    df["label_id"] = df["label"].map(merged_mapping)
+
+    added_classes = sorted(set(merged_mapping) - set(previous_mapping))
+    if added_classes:
+        print(f"[INFO] Added classes: {added_classes}")
+
+    active_label_ids = sorted(df["label_id"].unique())
+    metric_label_names = [label for label, idx in sorted(
+        ((label, idx) for label, idx in merged_mapping.items() if idx in active_label_ids),
+        key=lambda item: item[1],
+    )]
+
     train_df, val_df = split_dataframe(
-        df, stratify_col="label", test_size=args.val_size, random_state=42
+        df,
+        stratify_col="label",
+        test_size=args.val_size,
+        random_state=42,
     )
 
-    # Step 4: Build tokenizer and transforms
     tokenizer = build_tokenizer(args.bert_model_name)
     transform = build_transforms(image_size)
 
@@ -282,17 +406,12 @@ def main() -> None:
         num_workers=args.num_workers,
     )
 
-    num_classes = len(label_to_id)
-    id_to_label = {v: k for k, v in label_to_id.items()}
-    label_names = [id_to_label[i] for i in range(num_classes)]
+    num_classes = len(merged_mapping)
 
-    # Step 5: Initialise model with new number of classes
     model = HybridModel(num_classes=num_classes, bert_model_name=args.bert_model_name).to(device)
 
-    # Step 6: Load pre‑trained weights (skipping mismatched shapes)
-    load_pretrained_weights(model, args.state_dict_path)
+    load_pretrained_weights(model, state_dict_path, previous_mapping, merged_mapping)
 
-    # Step 7: Optionally freeze the backbone
     if args.freeze_backbone:
         print("[INFO] Freezing BERT and ResNet backbones. Only head and attention layers will be trained.")
         for param in model.bert.parameters():
@@ -300,13 +419,9 @@ def main() -> None:
         for param in model.resnet.parameters():
             param.requires_grad = False
 
-    # Step 8: Compute class weights to handle imbalance
-    weights_tensor = compute_weights(
-        df["label_id"].values, num_classes=num_classes, device=device
-    )
+    weights_tensor = build_class_weights(df["label_id"].values, num_classes=num_classes, device=device)
     criterion = nn.CrossEntropyLoss(weight=weights_tensor)
 
-    # Step 9: Build optimizer and scheduler
     optimizer = build_optimizer(
         model,
         lr_bert=args.lr_bert,
@@ -320,27 +435,25 @@ def main() -> None:
     early_stop_counter = 0
     best_state_dict_path = os.path.join(args.output_dir, "state_dict_transfer.pt")
 
-    # Step 10: Training loop
     for epoch in range(args.epochs):
         print(f"Epoch {epoch + 1}/{args.epochs}")
         train_loss, train_acc, train_report = train_one_epoch(
-            model, train_loader, criterion, optimizer, device, label_names
+            model, train_loader, criterion, optimizer, device, metric_label_names
         )
         print(f"Train Loss: {train_loss:.4f}, Acc: {train_acc:.4f}")
         print(train_report)
 
-        val_loss, val_acc, val_report, p, r, f1 = evaluate(
-            model, val_loader, criterion, device, label_names
+        val_loss, val_acc, val_report, precision, recall, f1_score = evaluate(
+            model, val_loader, criterion, device, metric_label_names
         )
         print(
-            f"Val Loss: {val_loss:.4f}, Acc: {val_acc:.4f}, Macro P/R/F1: {p:.4f}/{r:.4f}/{f1:.4f}"
+            f"Val Loss: {val_loss:.4f}, Acc: {val_acc:.4f}, Macro P/R/F1: "
+            f"{precision:.4f}/{recall:.4f}/{f1_score:.4f}"
         )
         print(val_report)
 
-        # Step scheduler on validation loss
         scheduler.step(val_loss)
 
-        # Early stopping + save best checkpoint
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             early_stop_counter = 0
@@ -352,23 +465,20 @@ def main() -> None:
                 print("[INFO] Early stopping triggered.")
                 break
 
-    # Save the label mapping for the new dataset
     label_map_path = os.path.join(args.output_dir, "label2id_transfer.json")
-    save_label_mapping(label_to_id, label_map_path)
+    save_label_mapping(merged_mapping, label_map_path)
     print(f"[INFO] Label mapping saved to {label_map_path}")
 
     print("[INFO] Training completed.")
 
-    # Step 11: (Optional) Export to ONNX
     if args.export_onnx:
-        # Reload the best checkpoint to ensure ONNX export uses best weights
         if os.path.exists(best_state_dict_path):
             model.load_state_dict(torch.load(best_state_dict_path, map_location=device))
             model.eval()
         else:
             print(f"[WARNING] Best model not found at {best_state_dict_path}. Skipping ONNX export.")
             return
-        # Retrieve an example batch for export
+
         try:
             example_batch = next(iter(val_loader))
         except StopIteration:
@@ -376,19 +486,19 @@ def main() -> None:
                 example_batch = next(iter(train_loader))
             except StopIteration:
                 example_batch = None
+
         if example_batch is None:
             print("[WARNING] Unable to get an example batch for ONNX export. Skipping export.")
             return
+
         example_input = (
             example_batch["input_ids"].to(device),
             example_batch["attention_mask"].to(device),
             example_batch["pixel_values"].to(device),
         )
-        # Timestamped ONNX filename
+
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-        onnx_path = os.path.join(
-            args.output_dir, f"hybrid_model_transfer_{timestamp}.onnx"
-        )
+        onnx_path = os.path.join(args.output_dir, f"hybrid_model_transfer_{timestamp}.onnx")
         torch.onnx.export(
             model,
             example_input,
@@ -403,6 +513,9 @@ def main() -> None:
             },
             opset_version=18,
         )
+        s3_handler.upload_file(cfg.best_onnx_model_path, f"outputs_training/{os.path.basename(cfg.best_onnx_model_path)}")
+        s3_handler.upload_file(cfg.label_map_path, f"outputs_training/{os.path.basename(cfg.label_map_path)}")
+        print(f"✅ ONNX model saved at {cfg.best_onnx_model_path}")
         print(f"[INFO] ONNX model exported to {onnx_path}")
 
 

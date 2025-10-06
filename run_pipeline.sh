@@ -21,4 +21,4 @@ python -c "from transformers import AutoModel; AutoModel.from_pretrained('indobe
 python -c "from torchvision.models import resnet50, ResNet50_Weights; resnet50(weights=ResNet50_Weights.IMAGENET1K_V1)"
 
 echo "🚀 Starting training pipeline..."
-python main.py --pipeline classifier --dataset-dir /app/dataset --output_dir /app/outputs
+python main.py "$@"

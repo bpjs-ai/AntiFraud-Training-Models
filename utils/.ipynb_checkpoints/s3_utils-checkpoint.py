@@ -7,20 +7,23 @@ import logging
 from tqdm import tqdm
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor, as_completed
-
-
+from boto3.session import Config  # ⬅️ tambahkan ini
 load_dotenv()
-
 class S3Handler:
-    def __init__(self, region_name='ap-southeast-1'):
+    def __init__(self, region_name='ap-southeast-1', pool_size=50):
         self.bucket_name = os.getenv("S3_BUCKET_NAME")
         self.s3_client = boto3.client(
             's3',
             endpoint_url=f"http://{os.getenv('S3_ENDPOINT')}",
             aws_access_key_id=os.getenv("S3_ACCESS_KEY"),
             aws_secret_access_key=os.getenv("S3_SECRET_KEY"), 
-            region_name=region_name
+            region_name=region_name,
+            config=Config(
+                max_pool_connections=pool_size,   # ⬅️ naikin pool
+                retries={'max_attempts': 5}       # ⬅️ opsional, lebih tahan error jaringan
+            )
         )
+
 
     def list_objects(self, prefix):
         """List all objects in a given prefix (folder)"""
@@ -97,21 +100,18 @@ class S3Handler:
                     # Calculate relative path from dir_path to preserve folder structure
                     relative_path = os.path.relpath(local_path, dir_path)
                     s3_file_key = f"{s3_key}/{relative_path}".replace('\\', '/')  # Normalize path separators
-
+    
                     # Skip upload only for existing PDF files, overwrite others
                     if filename.lower().endswith('.pdf'):
                         try:
                             # Check if the PDF file already exists in S3
                             self.s3_client.head_object(Bucket=self.bucket_name, Key=s3_file_key)
-                            # If exists, skip upload
-                            skipped_files.append(relative_path)
+                            skipped_files.append(relative_path)  # already exists → skip
                             continue
                         except ClientError as e:
-                            # If not found, proceed to upload
                             if e.response['Error']['Code'] != '404':
-                                # If other error, raise
                                 raise
-
+    
                     files_to_upload.append((relative_path, local_path, s3_file_key))
         
         if skipped_files:
@@ -121,21 +121,21 @@ class S3Handler:
             print("No new files to upload")
             return
         
-        # Upload files with progress bar
-        with tqdm(total=len(files_to_upload), desc="Uploading files", unit="file") as pbar:
-            for relative_path, local_path, s3_file_key in files_to_upload:
-                try:
-                    pbar.set_description(f"Uploading {relative_path}")
-                    self.s3_client.upload_file(local_path, self.bucket_name, s3_file_key)
-                    pbar.set_postfix({"status": "✅"})
-                except ClientError as e:
-                    pbar.set_postfix({"status": "❌"})
-                    print(f"\n❌ Failed to upload {relative_path}: {e}")
-                except Exception as e:
-                    pbar.set_postfix({"status": "⚠️"})
-                    print(f"\n⚠️ Other error while uploading {relative_path}: {e}")
-                finally:
-                    pbar.update(1)
+        total = len(files_to_upload)
+        print(f"📤 Starting upload of {total} files to bucket {self.bucket_name}/{s3_key}")
+    
+        for idx, (relative_path, local_path, s3_file_key) in enumerate(files_to_upload, start=1):
+            try:
+                self.s3_client.upload_file(local_path, self.bucket_name, s3_file_key)
+            except ClientError as e:
+                print(f"❌ Failed to upload {relative_path}: {e}")
+            except Exception as e:
+                print(f"⚠️ Other error while uploading {relative_path}: {e}")
+    
+            # log progress setiap 500 file atau terakhir
+            if idx % 500 == 0 or idx == total:
+                print(f"✅ Uploaded {idx}/{total} files")
+
 
 
     def upload_file(self, file_path, s3_key):
@@ -181,40 +181,6 @@ class S3Handler:
         except Exception as e:
             return False
 
-
-    def download_folder(self, s3_prefix: str, local_dir: str) -> List[str]:
-        """
-        Download all objects under the given S3 prefix into local_dir, preserving folder structure.
-        
-        :param s3_prefix: the "folder" in S3 (e.g. 'path/to/folder/')
-        :param local_dir: local directory to write files into
-        :return: list of local file paths downloaded
-        """
-        paginator = self.s3_client.get_paginator('list_objects_v2')
-        downloaded_files: List[str] = []
-        skipped_files: List[str] = []
-
-        for page in paginator.paginate(Bucket=self.bucket_name, Prefix=s3_prefix):
-            for obj in page.get('Contents', []):
-                key = obj['Key']
-                if key.endswith('/'):
-                    continue
-
-                relative_path = key[len(s3_prefix):].lstrip('/')
-                local_path = os.path.join(local_dir, relative_path)
-
-                # Tambahkan skip file jika file pdf sudah ada
-                if local_path.lower().endswith('.pdf') and os.path.isfile(local_path):
-                    skipped_files.append(relative_path)
-                    continue
-
-                if self.download_file(key, local_path):
-                    downloaded_files.append(local_path)
-
-        if skipped_files:
-            print(f"⏭️  Skipped {len(skipped_files)} existing PDF files: {', '.join(skipped_files[:5])}{'...' if len(skipped_files) > 5 else ''}")
-
-        return downloaded_files
     
     def download_folder_recursive(
         self, 
@@ -227,13 +193,6 @@ class S3Handler:
         """
         Download all objects under the given S3 prefix recursively into local_dir, 
         preserving folder structure (parallelized).
-        
-        :param s3_prefix: the "folder" in S3 (e.g. 'path/to/folder/')
-        :param local_dir: local directory to write files into
-        :param file_extension: optional file extension filter (e.g. '.pdf', '.txt')
-        :param skip_existing: whether to skip files that already exist locally
-        :param max_workers: number of threads for parallel download
-        :return: tuple of (downloaded_files, skipped_files)
         """
         files_to_download = []
         skipped_files = []
@@ -269,6 +228,8 @@ class S3Handler:
             return [], skipped_files
     
         downloaded_files = []
+        total = len(files_to_download)
+        print(f"📥 Starting download of {total} files from {s3_prefix} into {local_dir}")
     
         # Parallel execution with ThreadPoolExecutor
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -277,7 +238,7 @@ class S3Handler:
                 for relative_path, s3_key, local_path in files_to_download
             }
     
-            for future in tqdm(as_completed(future_to_file), total=len(files_to_download), desc="Downloading files", unit="file"):
+            for idx, future in enumerate(as_completed(future_to_file), start=1):
                 relative_path, local_path = future_to_file[future]
                 try:
                     success = future.result()
@@ -285,6 +246,10 @@ class S3Handler:
                         downloaded_files.append(local_path)
                 except Exception as e:
                     print(f"⚠️ Error while downloading {relative_path}: {e}")
+    
+                # print progress tiap 500 file atau terakhir
+                if idx % 500 == 0 or idx == total:
+                    print(f" Downloaded {idx}/{total} files")
     
         return downloaded_files, skipped_files
     
