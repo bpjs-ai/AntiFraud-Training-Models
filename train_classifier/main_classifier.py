@@ -1,9 +1,11 @@
 import argparse
-import os
 import json
+import os
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
 import torch
 import torch.nn as nn
-from datetime import datetime
 
 from utils.s3_utils import S3Handler
 from train_classifier.config import TrainConfig
@@ -24,66 +26,57 @@ from train_classifier.train_utils import (
     train_one_epoch,
 )
 import subprocess
-    
 
+import warnings
+warnings.filterwarnings("ignore")
+UTC_PLUS_7 = timezone(timedelta(hours=7))
 
-def parse_args():
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Hybrid OCR Training Pipeline")
     parser.add_argument("--config", type=str, default=None, help="Path to JSON config file")
 
-    # Allow override via CLI
-    parser.add_argument("--data_csv_path", type=str, default="dataset/data.csv")
-    parser.add_argument("--image_root_dir", type=str, default="dataset")
-    parser.add_argument("--val_size", type=float, default=None)
-    parser.add_argument("--epochs", type=int, default=None)
-    parser.add_argument("--batch_size", type=int, default=None)
-    parser.add_argument("--num_workers", type=int, default=None)
-    parser.add_argument("--lr_bert", type=float, default=None)
-    parser.add_argument("--lr_resnet", type=float, default=None)
-    parser.add_argument("--lr_heads", type=float, default=None)
-    parser.add_argument("--bert_model_name", type=str, default=None)
-    parser.add_argument("--output_dir", type=str, default=None)
+    defaults = TrainConfig()
+    parser.add_argument("--epochs", type=int, default=defaults.epochs)
+    parser.add_argument("--batch_size", type=int, default=defaults.batch_size)
+    parser.add_argument("--num_workers", type=int, default=defaults.num_workers)
+    parser.add_argument("--lr_bert", type=float, default=defaults.lr_bert)
+    parser.add_argument("--lr_resnet", type=float, default=defaults.lr_resnet)
+    parser.add_argument("--lr_heads", type=float, default=defaults.lr_heads)
+
     return parser.parse_args()
 
 
-def load_config(args) -> TrainConfig:
+def now_in_gmt7() -> datetime:
+    """Return the current time localized to UTC+7."""
+    return datetime.now(timezone.utc).astimezone(UTC_PLUS_7)
+
+
+def load_config(args: argparse.Namespace) -> TrainConfig:
     cfg = TrainConfig()
 
     if args.config and os.path.exists(args.config):
-        with open(args.config, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        for k, v in data.items():
-            if hasattr(cfg, k):
-                setattr(cfg, k, v)
+        with open(args.config, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        for key, value in data.items():
+            if hasattr(cfg, key):
+                setattr(cfg, key, value)
 
-    # CLI overrides
-    for field in [
-        "data_csv_path",
-        "image_root_dir",
-        "val_size",
-        "epochs",
-        "batch_size",
-        "num_workers",
-        "lr_bert",
-        "lr_resnet",
-        "lr_heads",
-        "bert_model_name",
-        "output_dir",
-    ]:
-        arg_val = getattr(args, field)
-        if arg_val is not None:
-            setattr(cfg, field, arg_val)
+    for field in ("epochs", "batch_size", "num_workers", "lr_bert", "lr_resnet", "lr_heads"):
+        override = getattr(args, field, None)
+        if override is not None:
+            setattr(cfg, field, override)
 
     return cfg
 
 
-def main():
+def main() -> None:
     args = parse_args()
     cfg = load_config(args)
-    s3_handler = S3Handler()
 
-    os.makedirs(cfg.output_dir, exist_ok=True)
-    # Backward compatibility for older configs
+    output_dir = Path(cfg.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Backward compatibility for legacy configs
     if not hasattr(cfg, "best_state_dict_path"):
         legacy_best = getattr(cfg, "best_model_path", os.path.join(cfg.output_dir, "best_model.pt"))
         cfg.best_state_dict_path = legacy_best
@@ -91,48 +84,55 @@ def main():
     if not hasattr(cfg, "best_onnx_model_path"):
         cfg.best_onnx_model_path = os.path.join(cfg.output_dir, "best_model.onnx")
 
-    if not os.path.isabs(cfg.best_state_dict_path):
-        cfg.best_state_dict_path = os.path.join(
-            cfg.output_dir, os.path.basename(cfg.best_state_dict_path)
-        )
-    if not os.path.isabs(cfg.label_map_path):
-        cfg.label_map_path = os.path.join(cfg.output_dir, os.path.basename(cfg.label_map_path))
+    def resolve_output_path(path_value: str, default_value: str) -> Path:
+        """Resolve path relative to the output directory and ensure parent exists."""
+        candidate = Path(path_value or default_value)
+        if not candidate.is_absolute():
+            candidate = output_dir / candidate
+        candidate.parent.mkdir(parents=True, exist_ok=True)
+        return candidate
 
-    best_onnx_raw_path = getattr(cfg, "best_onnx_model_path", "full_model.onnx")
-    best_onnx_name = os.path.basename(best_onnx_raw_path)
-    if os.path.isabs(best_onnx_raw_path):
-        onnx_dir = os.path.dirname(best_onnx_raw_path) or cfg.output_dir
-    else:
-        onnx_dir = cfg.output_dir
+    def timestamped_path(template: Path, timestamp: str) -> Path:
+        """Append a timestamp to the template path before its suffix."""
+        if template.suffix:
+            new_name = f"{template.stem}_{timestamp}{template.suffix}"
+        else:
+            new_name = f"{template.name}_{timestamp}"
+        return template.with_name(new_name)
 
-    timestamp = datetime.now().strftime("%Y%m%d%H")
-    stem, ext = os.path.splitext(best_onnx_name)
-    if not stem:
-        stem = "full_model"
-    if not ext:
-        ext = ".onnx"
+    state_dict_template = resolve_output_path(getattr(cfg, "best_state_dict_path", ""), "state_dict/best_state_dict.pt")
+    label_map_template = resolve_output_path(getattr(cfg, "label_map_path", ""), "label2id/label2id.json")
+    result_template = resolve_output_path(getattr(cfg, "result_path", ""), "result/training_report.json")
+    onnx_template = resolve_output_path(getattr(cfg, "best_onnx_model_path", ""), "model/full_model.onnx")
 
-    os.makedirs(onnx_dir, exist_ok=True)
-    cfg.best_onnx_model_path = os.path.join(onnx_dir, f"{stem}_{timestamp}{ext}")
+    run_timestamp = now_in_gmt7().strftime("%Y%m%d%H%M%S")
+    state_dict_path = timestamped_path(state_dict_template, run_timestamp)
+    label_map_path = timestamped_path(label_map_template, run_timestamp)
+    result_path = timestamped_path(result_template, run_timestamp)
+    onnx_path = timestamped_path(onnx_template, run_timestamp)
 
-    print(torch.cuda.is_available())
+    for path in (state_dict_path, label_map_path, result_path, onnx_path):
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+    cfg.best_state_dict_path = str(state_dict_path)
+    cfg.label_map_path = str(label_map_path)
+    cfg.result_path = str(result_path)
+    cfg.best_onnx_model_path = str(onnx_path)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    input_folder=cfg.image_root_dir
-    output_csv=cfg.data_csv_path
-
-    
-
     subprocess.run([
-        "python", "train_classifier/ocr_paddle.py",
-        "--input_folder", cfg.image_root_dir,
-        "--output_csv", cfg.data_csv_path,
-        "--num_workers", "50"
+        "python",
+        "train_classifier/ocr_paddle.py",
+        "--input_folder",
+        cfg.image_root_dir,
+        "--output_csv",
+        cfg.data_csv_path,
+        "--num_workers",
+        "50",
     ])
 
-    # Dataframe & label map
     df, label_to_id = load_and_prepare_dataframe(
         data_csv_path=cfg.data_csv_path,
         image_root_dir=cfg.image_root_dir,
@@ -142,7 +142,12 @@ def main():
         drop_empty_text=cfg.drop_empty_text,
     )
 
-    train_df, val_df = split_dataframe(df, stratify_col=cfg.label_col, test_size=cfg.val_size, random_state=cfg.seed)
+    train_df, val_df = split_dataframe(
+        df,
+        stratify_col=cfg.label_col,
+        test_size=cfg.val_size,
+        random_state=cfg.seed,
+    )
 
     tokenizer = build_tokenizer(cfg.bert_model_name)
     transform = build_transforms(cfg.image_size)
@@ -163,7 +168,6 @@ def main():
 
     model = HybridModel(num_classes=num_classes, bert_model_name=cfg.bert_model_name).to(device)
 
-    # Class weights
     weights = compute_weights(df["label_id"].values, num_classes=num_classes, device=device)
     criterion = nn.CrossEntropyLoss(weight=weights)
 
@@ -178,6 +182,8 @@ def main():
 
     best_val_loss = float("inf")
     early_stop_counter = 0
+    best_metrics = {}
+    last_metrics = {}
 
     for epoch in range(cfg.epochs):
         print(f"Epoch {epoch + 1}/{cfg.epochs}")
@@ -187,33 +193,66 @@ def main():
         print(f"Train Loss: {train_loss:.4f}, Acc: {train_acc:.4f}")
         print(train_report)
 
-        val_loss, val_acc, val_report, p, r, f1 = evaluate(
+        val_loss, val_acc, val_report, precision, recall, f1 = evaluate(
             model, val_loader, criterion, device, label_names
         )
-        print(f"Val Loss: {val_loss:.4f}, Acc: {val_acc:.4f}, Macro P/R/F1: {p:.4f}/{r:.4f}/{f1:.4f}")
+        print(
+            f"Val Loss: {val_loss:.4f}, Acc: {val_acc:.4f}, Macro P/R/F1: "
+            f"{precision:.4f}/{recall:.4f}/{f1:.4f}"
+        )
         print(val_report)
 
-        # Scheduler step
         scheduler.step(val_loss)
 
-        # Early stopping + checkpoint
+        current_metrics = {
+            "epoch": epoch + 1,
+            "train_loss": train_loss,
+            "train_accuracy": train_acc,
+            "val_loss": val_loss,
+            "val_accuracy": val_acc,
+            "precision": precision,
+            "recall": recall,
+            "f1": f1,
+        }
+        last_metrics = current_metrics
+
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             early_stop_counter = 0
             torch.save(model.state_dict(), cfg.best_state_dict_path)
             print(f"Saved improved state dict to {cfg.best_state_dict_path}")
+            best_metrics = current_metrics
         else:
             early_stop_counter += 1
             if early_stop_counter >= cfg.early_stop_patience:
                 print("Early stopping triggered")
                 break
 
-    # Save label mapping
     save_label_mapping(label_to_id, cfg.label_map_path)
-
     print("Training completed.")
 
-    # Reload the best checkpoint before exporting to ensure ONNX uses the best weights
+    summary_metrics = best_metrics or last_metrics
+    hyperparameters = {
+        "epochs": cfg.epochs,
+        "batch_size": cfg.batch_size,
+        "num_workers": cfg.num_workers,
+        "lr_bert": cfg.lr_bert,
+        "lr_resnet": cfg.lr_resnet,
+        "lr_heads": cfg.lr_heads,
+        "weight_decay": cfg.weight_decay,
+        "scheduler_patience": cfg.scheduler_patience,
+        "early_stop_patience": cfg.early_stop_patience,
+    }
+    training_summary = {
+        "mode": "full",
+        "timestamp": now_in_gmt7().isoformat(),
+        "num_classes": num_classes,
+        "hyperparameters": hyperparameters,
+        "metrics": summary_metrics,
+    }
+    with open(cfg.result_path, "w", encoding="utf-8") as report_file:
+        json.dump(training_summary, report_file, indent=2)
+
     if os.path.exists(cfg.best_state_dict_path):
         model.load_state_dict(torch.load(cfg.best_state_dict_path, map_location=device))
         model.to(device)
@@ -226,7 +265,6 @@ def main():
 
     model.eval()
 
-    # Try to grab an example batch from the validation loader, fallback to the training loader
     example_batch = None
     for loader in (val_loader, train_loader):
         if loader is None:
@@ -241,34 +279,34 @@ def main():
         print("Warning: Unable to retrieve a batch for ONNX export. Skipping export.")
         return
 
-    with torch.no_grad():
-        example_input = (
-            example_batch["input_ids"].to(device),
-            example_batch["attention_mask"].to(device),
-            example_batch["pixel_values"].to(device)
-        )
+    example_input = (
+        example_batch["input_ids"].to(device),
+        example_batch["attention_mask"].to(device),
+        example_batch["pixel_values"].to(device),
+    )
 
-        torch.onnx.export(
-            model,
-            example_input,
-            cfg.best_onnx_model_path,
-            input_names=["input_ids", "attention_mask", "pixel_values"],
-            output_names=["logits"],
-            dynamic_axes={
-                "input_ids": {0: "batch_size", 1: "sequence"},
-                "attention_mask": {0: "batch_size", 1: "sequence"},
-                "pixel_values": {0: "batch_size"},
-                "logits": {0: "batch_size"}
-            },
-            opset_version=18,
-        )
-    s3_handler.upload_file(cfg.best_onnx_model_path, f"outputs_training/{os.path.basename(cfg.best_onnx_model_path)}")
-    s3_handler.upload_file(cfg.label_map_path, f"outputs_training/{os.path.basename(cfg.label_map_path)}")
+    torch.onnx.export(
+        model,
+        example_input,
+        cfg.best_onnx_model_path,
+        input_names=["input_ids", "attention_mask", "pixel_values"],
+        output_names=["logits"],
+        dynamic_axes={
+            "input_ids": {0: "batch_size", 1: "sequence"},
+            "attention_mask": {0: "batch_size", 1: "sequence"},
+            "pixel_values": {0: "batch_size"},
+            "logits": {0: "batch_size"},
+        },
+        opset_version=18,
+    )
+
+    s3_handler = S3Handler()
+    s3_handler.upload_file(cfg.best_onnx_model_path, f"outputs_training/full/models/{os.path.basename(cfg.best_onnx_model_path)}")
+    s3_handler.upload_file(cfg.label_map_path, f"outputs_training/full/labelmaps/{os.path.basename(cfg.label_map_path)}")
+    s3_handler.upload_file(cfg.result_path, f"outputs_training/full/results/{os.path.basename(cfg.result_path)}")
+    s3_handler.upload_file(cfg.best_state_dict_path, f"outputs_training/full/state_dicts/{os.path.basename(cfg.best_state_dict_path)}")
     print(f"✅ ONNX model saved at {cfg.best_onnx_model_path}")
-
 
 
 if __name__ == "__main__":
     main()
-
-

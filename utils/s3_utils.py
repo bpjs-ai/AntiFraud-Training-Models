@@ -7,7 +7,8 @@ import logging
 from tqdm import tqdm
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from boto3.session import Config  # ⬅️ tambahkan ini
+from boto3.session import Config  
+
 load_dotenv()
 class S3Handler:
     def __init__(self, region_name='ap-southeast-1', pool_size=50):
@@ -19,8 +20,8 @@ class S3Handler:
             aws_secret_access_key=os.getenv("S3_SECRET_KEY"), 
             region_name=region_name,
             config=Config(
-                max_pool_connections=pool_size,   # ⬅️ naikin pool
-                retries={'max_attempts': 5}       # ⬅️ opsional, lebih tahan error jaringan
+                max_pool_connections=pool_size,   
+                retries={'max_attempts': 5}       
             )
         )
 

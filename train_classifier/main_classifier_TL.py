@@ -8,15 +8,15 @@ set and will reuse the pretrained weights downloaded from S3 by default.
 import argparse
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
+from pathlib import Path
 
 import numpy as np
 import torch
 import torch.nn as nn
 from sklearn.utils.class_weight import compute_class_weight
 
-from utils.s3_utils import S3Handler
 from train_classifier.dataset import (
     build_dataloaders,
     build_tokenizer,
@@ -24,6 +24,7 @@ from train_classifier.dataset import (
     load_and_prepare_dataframe,
     split_dataframe,
 )
+from train_classifier.config import TransferConfig
 from train_classifier.model import HybridModel
 import subprocess
 from train_classifier.train_utils import (
@@ -35,9 +36,17 @@ from train_classifier.train_utils import (
 )
 from utils.s3_utils import S3Handler
 
+import warnings
+warnings.filterwarnings("ignore")
 
 CLASSIFIER_HEAD_WEIGHT_KEY = "fusion.8.weight"
 CLASSIFIER_HEAD_BIAS_KEY = "fusion.8.bias"
+UTC_PLUS_7 = timezone(timedelta(hours=7))
+
+
+def now_in_gmt7() -> datetime:
+    """Return the current time localized to UTC+7."""
+    return datetime.now(timezone.utc).astimezone(UTC_PLUS_7)
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -45,132 +54,66 @@ def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Fine-tune a pretrained Hybrid OCR classifier on new data."
     )
-
-    parser.add_argument(
-        "--state_dict_path",
-        type=str,
-        default=None,
-        help="Local path to a pretrained state_dict. If omitted the artifact will be downloaded from S3.",
-    )
+    defaults = TransferConfig()
     parser.add_argument(
         "--state_dict_s3_key",
         type=str,
-        default="outputs_training/state_dict.pt",
+        default=defaults.state_dict_s3_key,
         help="S3 key to download the pretrained state_dict when --state_dict_path is not provided.",
-    )
-    parser.add_argument(
-        "--previous_label_map_path",
-        type=str,
-        default=None,
-        help="Optional local path to the previous label2id mapping. Overrides the S3 download if provided.",
     )
     parser.add_argument(
         "--label_map_s3_key",
         type=str,
-        default="outputs_training/label2id.json",
+        default=defaults.label_map_s3_key,
         help="S3 key to download the previous label2id mapping when no local path is provided.",
-    )
-    parser.add_argument(
-        "--artifact_dir",
-        type=str,
-        default="pretrained_artifacts",
-        help="Directory used to cache artifacts downloaded from S3.",
-    )
-    parser.add_argument(
-        "--image_root_dir",
-        type=str,
-        default="dataset",
-        help="Root directory of the transfer learning dataset (default: dataset/dataset_TL).",
-    )
-    parser.add_argument(
-        "--data_csv_path",
-        type=str,
-        default="dataset/dataset_TL.csv",
-        help="CSV file containing filename, label and text columns. Will be generated via OCR when missing.",
-    )
-    parser.add_argument(
-        "--output_dir",
-        type=str,
-        default="outputs_transfer",
-        help="Directory where checkpoints, label maps and ONNX models will be saved.",
     )
     parser.add_argument(
         "--epochs",
         type=int,
-        default=10,
-        help="Number of fine-tuning epochs (default: 10).",
+        default=defaults.epochs,
+        help="Number of fine-tuning epochs (default: 50).",
     )
     parser.add_argument(
         "--batch_size",
         type=int,
-        default=16,
+        default=defaults.batch_size,
         help="Mini-batch size for training and validation (default: 16).",
     )
     parser.add_argument(
         "--num_workers",
         type=int,
-        default=4,
-        help="Number of worker processes for PyTorch DataLoader and OCR (default: 4).",
-    )
-    parser.add_argument(
-        "--bert_model_name",
-        type=str,
-        default="indobenchmark/indobert-base-p2",
-        help="Name or path of the BERT model to use (default: IndoBERT base).",
+        default=defaults.num_workers,
+        help="Number of worker processes for PyTorch DataLoader and OCR (default: 8).",
     )
     parser.add_argument(
         "--lr_bert",
         type=float,
-        default=0.0,
-        help="Learning rate for BERT parameters. Set to 0 to keep BERT frozen (default: 0).",
+        default=defaults.lr_bert,
+        help="Learning rate for BERT parameters. Set to 0 to keep BERT frozen (default: 2e-5).",
     )
     parser.add_argument(
         "--lr_resnet",
         type=float,
-        default=0.0,
-        help="Learning rate for ResNet parameters. Set to 0 to keep ResNet frozen (default: 0).",
+        default=defaults.lr_resnet,
+        help="Learning rate for ResNet parameters. Set to 0 to keep ResNet frozen (default: 1e-4).",
     )
     parser.add_argument(
         "--lr_heads",
         type=float,
-        default=1e-4,
+        default=defaults.lr_heads,
         help="Learning rate for classification head and cross-attention layers (default: 1e-4).",
-    )
-    parser.add_argument(
-        "--val_size",
-        type=float,
-        default=0.2,
-        help="Fraction of the dataset to use for validation (default: 0.2).",
-    )
-    parser.add_argument(
-        "--max_length",
-        type=int,
-        default=512,
-        help="Maximum sequence length for the tokenizer (default: 512).",
-    )
-    parser.add_argument(
-        "--image_size",
-        type=str,
-        default="224,224",
-        help="Image size as 'height,width' (default: 224,224).",
     )
     parser.add_argument(
         "--early_stop_patience",
         type=int,
-        default=5,
-        help="Number of epochs without improvement before early stopping (default: 5).",
+        default=defaults.early_stop_patience,
+        help="Number of epochs without improvement before early stopping (default: 15).",
     )
     parser.add_argument(
         "--freeze_backbone",
         action="store_true",
         help="Freeze BERT and ResNet by disabling gradients for those modules.",
     )
-    parser.add_argument(
-        "--export_onnx",
-        action="store_true",
-        help="Export the best checkpoint to ONNX once training finishes.",
-    )
-
     return parser.parse_args()
 
 
@@ -298,22 +241,57 @@ def load_pretrained_weights(
 
 def main() -> None:
     args = parse_arguments()
-    s3_handler = S3Handler()
+    defaults = TransferConfig()
 
-    os.makedirs(args.output_dir, exist_ok=True)
+    output_dir = Path(defaults.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    try:
-        height_str, width_str = args.image_size.split(",")
-        image_size = (int(height_str), int(width_str))
-    except Exception as exc:  # noqa: BLE001
-        raise ValueError("--image_size should be formatted as 'height,width', e.g., '224,224'") from exc
+    def resolve_output_path(path_value: str, default_value: str) -> Path:
+        """Resolve a relative output path against the pipeline output directory."""
+        candidate = Path(path_value or default_value)
+        if not candidate.is_absolute():
+            candidate = output_dir / candidate
+        candidate.parent.mkdir(parents=True, exist_ok=True)
+        return candidate
+
+    def timestamped_path(template: Path, timestamp: str) -> Path:
+        """Append a timestamp before the suffix of the provided template path."""
+        if template.suffix:
+            new_name = f"{template.stem}_{timestamp}{template.suffix}"
+        else:
+            new_name = f"{template.name}_{timestamp}"
+        return template.with_name(new_name)
+
+    best_state_dict_template = resolve_output_path(getattr(defaults, "best_state_dict_path", ""), "state_dicts/state_dict_transfer.pt")
+    label_map_template = resolve_output_path(getattr(defaults, "label_map_path", ""), "labelmaps/label2id_transfer.json")
+    result_template = resolve_output_path(getattr(defaults, "result_path", ""), "results/training_report.json")
+    onnx_template = resolve_output_path(getattr(defaults, "best_onnx_model_path", ""), "models/hybrid_model_transfer.onnx")
+
+    run_timestamp = now_in_gmt7().strftime("%Y%m%d%H%M%S")
+    best_state_dict_path = timestamped_path(best_state_dict_template, run_timestamp)
+    label_map_path = timestamped_path(label_map_template, run_timestamp)
+    result_path = timestamped_path(result_template, run_timestamp)
+    onnx_path = timestamped_path(onnx_template, run_timestamp)
+
+    for path in (best_state_dict_path, label_map_path, result_path, onnx_path):
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+    defaults.best_state_dict_path = str(best_state_dict_path)
+    defaults.label_map_path = str(label_map_path)
+    defaults.result_path = str(result_path)
+    defaults.best_onnx_model_path = str(onnx_path)
+
+    image_size = defaults.image_size
+    if len(image_size) != 2:
+        raise ValueError("defaults.image_size must contain two entries.")
+    image_size = (int(image_size[0]), int(image_size[1]))
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"[INFO] Using device: {device}")
 
     s3_handler: Optional[S3Handler] = None
 
-    state_dict_path = args.state_dict_path
+    state_dict_path = defaults.state_dict_path
     if state_dict_path:
         if not os.path.exists(state_dict_path):
             raise FileNotFoundError(f"state_dict not found at {state_dict_path}")
@@ -321,26 +299,26 @@ def main() -> None:
         s3_handler, state_dict_path = download_artifact(
             s3_handler,
             args.state_dict_s3_key,
-            args.artifact_dir,
+            defaults.artifact_dir,
             "pretrained state_dict",
         )
         if state_dict_path is None:
             raise FileNotFoundError("Unable to obtain pretrained state_dict.")
 
     previous_mapping: Dict[str, int] = {}
-    label_map_source = None
-    if args.previous_label_map_path:
-        if not os.path.exists(args.previous_label_map_path):
+    label_map_source: Optional[str] = None
+    if defaults.previous_label_map_path:
+        if not os.path.exists(defaults.previous_label_map_path):
             raise FileNotFoundError(
-                f"Previous label map not found at {args.previous_label_map_path}."
+                f"Previous label map not found at {defaults.previous_label_map_path}."
             )
-        label_map_source = args.previous_label_map_path
+        label_map_source = defaults.previous_label_map_path
     elif args.label_map_s3_key:
         try:
             s3_handler, label_map_source = download_artifact(
                 s3_handler,
                 args.label_map_s3_key,
-                args.artifact_dir,
+                defaults.artifact_dir,
                 "previous label mapping",
             )
         except FileNotFoundError:
@@ -358,14 +336,14 @@ def main() -> None:
 
     subprocess.run([
         "python", "train_classifier/ocr_paddle.py",
-        "--input_folder", args.image_root_dir,
-        "--output_csv", args.data_csv_path,
+        "--input_folder", defaults.image_root_dir,
+        "--output_csv", defaults.data_csv_path,
         "--num_workers", "50"
     ])
-    
+
     df, _ = load_and_prepare_dataframe(
-        data_csv_path=args.data_csv_path,
-        image_root_dir=args.image_root_dir,
+        data_csv_path=defaults.data_csv_path,
+        image_root_dir=defaults.image_root_dir,
         filename_col="filename",
         label_col="label",
         text_col="text",
@@ -389,11 +367,11 @@ def main() -> None:
     train_df, val_df = split_dataframe(
         df,
         stratify_col="label",
-        test_size=args.val_size,
+        test_size=defaults.val_size,
         random_state=42,
     )
 
-    tokenizer = build_tokenizer(args.bert_model_name)
+    tokenizer = build_tokenizer(defaults.bert_model_name)
     transform = build_transforms(image_size)
 
     train_loader, val_loader = build_dataloaders(
@@ -401,14 +379,14 @@ def main() -> None:
         val_df=val_df,
         tokenizer=tokenizer,
         transform=transform,
-        max_length=args.max_length,
+        max_length=defaults.max_length,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
     )
 
     num_classes = len(merged_mapping)
 
-    model = HybridModel(num_classes=num_classes, bert_model_name=args.bert_model_name).to(device)
+    model = HybridModel(num_classes=num_classes, bert_model_name=defaults.bert_model_name).to(device)
 
     load_pretrained_weights(model, state_dict_path, previous_mapping, merged_mapping)
 
@@ -433,7 +411,8 @@ def main() -> None:
 
     best_val_loss = float("inf")
     early_stop_counter = 0
-    best_state_dict_path = os.path.join(args.output_dir, "state_dict_transfer.pt")
+    best_metrics: Dict[str, float] = {}
+    last_metrics: Dict[str, float] = {}
 
     for epoch in range(args.epochs):
         print(f"Epoch {epoch + 1}/{args.epochs}")
@@ -454,26 +433,61 @@ def main() -> None:
 
         scheduler.step(val_loss)
 
+        current_metrics = {
+            "epoch": epoch + 1,
+            "train_loss": train_loss,
+            "train_accuracy": train_acc,
+            "val_loss": val_loss,
+            "val_accuracy": val_acc,
+            "precision": precision,
+            "recall": recall,
+            "f1": f1_score,
+        }
+        last_metrics = current_metrics
+
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             early_stop_counter = 0
-            torch.save(model.state_dict(), best_state_dict_path)
+            torch.save(model.state_dict(), str(best_state_dict_path))
             print(f"[INFO] Saved improved model to {best_state_dict_path}")
+            best_metrics = current_metrics
         else:
             early_stop_counter += 1
             if early_stop_counter >= args.early_stop_patience:
                 print("[INFO] Early stopping triggered.")
                 break
 
-    label_map_path = os.path.join(args.output_dir, "label2id_transfer.json")
-    save_label_mapping(merged_mapping, label_map_path)
+    save_label_mapping(merged_mapping, str(label_map_path))
     print(f"[INFO] Label mapping saved to {label_map_path}")
 
     print("[INFO] Training completed.")
 
-    if args.export_onnx:
-        if os.path.exists(best_state_dict_path):
-            model.load_state_dict(torch.load(best_state_dict_path, map_location=device))
+    summary_metrics = best_metrics or last_metrics
+    hyperparameters = {
+        "epochs": args.epochs,
+        "batch_size": args.batch_size,
+        "num_workers": args.num_workers,
+        "lr_bert": args.lr_bert,
+        "lr_resnet": args.lr_resnet,
+        "lr_heads": args.lr_heads,
+        "early_stop_patience": args.early_stop_patience,
+        "freeze_backbone": args.freeze_backbone,
+    }
+    training_summary = {
+        "mode": "transfer",
+        "timestamp": now_in_gmt7().isoformat(),
+        "num_classes": num_classes,
+        "added_classes": added_classes,
+        "hyperparameters": hyperparameters,
+        "metrics": summary_metrics,
+        "pretrained_state_dict": state_dict_path,
+    }
+    with open(result_path, "w", encoding="utf-8") as report_file:
+        json.dump(training_summary, report_file, indent=2)
+
+    if defaults.export_onnx:
+        if best_state_dict_path.exists():
+            model.load_state_dict(torch.load(str(best_state_dict_path), map_location=device))
             model.eval()
         else:
             print(f"[WARNING] Best model not found at {best_state_dict_path}. Skipping ONNX export.")
@@ -497,12 +511,11 @@ def main() -> None:
             example_batch["pixel_values"].to(device),
         )
 
-        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-        onnx_path = os.path.join(args.output_dir, f"hybrid_model_transfer_{timestamp}.onnx")
+        onnx_path.parent.mkdir(parents=True, exist_ok=True)
         torch.onnx.export(
             model,
             example_input,
-            onnx_path,
+            str(onnx_path),
             input_names=["input_ids", "attention_mask", "pixel_values"],
             output_names=["logits"],
             dynamic_axes={
@@ -513,10 +526,22 @@ def main() -> None:
             },
             opset_version=18,
         )
-        s3_handler.upload_file(cfg.best_onnx_model_path, f"outputs_training/{os.path.basename(cfg.best_onnx_model_path)}")
-        s3_handler.upload_file(cfg.label_map_path, f"outputs_training/{os.path.basename(cfg.label_map_path)}")
-        print(f"✅ ONNX model saved at {cfg.best_onnx_model_path}")
-        print(f"[INFO] ONNX model exported to {onnx_path}")
+        upload_handler = s3_handler or S3Handler()
+        onnx_key = f"outputs_training/transfer/models/{onnx_path.name}"
+        label_map_key = f"outputs_training/transfer/labelmaps/{label_map_path.name}"
+        result_key = f"outputs_training/transfer/results/{result_path.name}"
+        state_dict_key = f"outputs_training/transfer/state_dicts/{best_state_dict_path.name}"
+
+        upload_handler.upload_file(str(onnx_path), onnx_key)
+        upload_handler.upload_file(str(label_map_path), label_map_key)
+        upload_handler.upload_file(str(result_path), result_key)
+        upload_handler.upload_file(str(best_state_dict_path), state_dict_key)
+
+        print(f"✅ ONNX model saved at {onnx_path}")
+        print(
+            f"[INFO] Uploaded ONNX model to {onnx_key}, "
+            f"label map to {label_map_key}, and training summary to {result_key}"
+        )
 
 
 if __name__ == "__main__":

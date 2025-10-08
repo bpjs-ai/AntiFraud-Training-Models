@@ -11,7 +11,7 @@ services:
     container_name: training-app-pytorch
     restart: unless-stopped
     command: >
-      python main.py --classifier_mode full --epochs 5
+      python main.py --mode full --epochs 5
     volumes:
       - ./dataset:/app/dataset
       - ./outputs:/app/outputs
@@ -21,7 +21,7 @@ services:
     env_file:
       - .env
     environment:
-      - CLASSIFIER_MODE=full
+      - MODE=full
       - DATASET_DIR=/app/dataset
       - OUTPUT_DIR=/app/outputs
       - HF_HOME=/root/.cache/huggingface
@@ -32,7 +32,7 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              device_ids: ["2"]      # <-- hanya expose GPU index 2
+              device_ids: ["2"]
               capabilities: [gpu]
 
 volumes:
