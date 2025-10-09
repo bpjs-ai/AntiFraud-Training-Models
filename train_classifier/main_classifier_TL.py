@@ -58,13 +58,13 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--state_dict_s3_key",
         type=str,
-        default=defaults.state_dict_s3_key,
+        default=None,
         help="S3 key to download the pretrained state_dict when --state_dict_path is not provided.",
     )
     parser.add_argument(
         "--label_map_s3_key",
         type=str,
-        default=defaults.label_map_s3_key,
+        default=None,
         help="S3 key to download the previous label2id mapping when no local path is provided.",
     )
     parser.add_argument(

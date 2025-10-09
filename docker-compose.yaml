@@ -9,7 +9,6 @@ services:
     image: training-app-pytorch
     shm_size: "2g"
     container_name: training-app-pytorch
-    restart: unless-stopped
     command: >
       python main.py --mode full --epochs 5
     volumes:
@@ -32,7 +31,7 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              device_ids: ["2"]
+              device_ids: ["3"]
               capabilities: [gpu]
 
 volumes:
