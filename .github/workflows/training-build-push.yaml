@@ -3,7 +3,7 @@ name: Training AI Build and Push
 on:
   push:
     branches:
-      - main
+      - ref-args2
     paths-ignore:
       - 'docker-compose.*'
       - 'Dockerfile.ubuntu'
