@@ -9,7 +9,7 @@ import argparse
 import json
 import os
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from pathlib import Path
 
 import numpy as np
@@ -412,8 +412,8 @@ def main() -> None:
 
     best_val_loss = float("inf")
     early_stop_counter = 0
-    best_metrics: Dict[str, float] = {}
-    last_metrics: Dict[str, float] = {}
+    best_metrics: Dict[str, Any] = {}
+    last_metrics: Dict[str, Any] = {}
 
     for epoch in range(args.epochs):
         print(f"Epoch {epoch + 1}/{args.epochs}")
@@ -423,7 +423,7 @@ def main() -> None:
         print(f"Train Loss: {train_loss:.4f}, Acc: {train_acc:.4f}")
         print(train_report)
 
-        val_loss, val_acc, val_report, precision, recall, f1_score = evaluate(
+        val_loss, val_acc, val_report, precision, recall, f1_score, per_class_metrics = evaluate(
             model, val_loader, criterion, device, metric_label_names
         )
         print(
@@ -443,6 +443,7 @@ def main() -> None:
             "precision": precision,
             "recall": recall,
             "f1": f1_score,
+            "per_class": per_class_metrics,
         }
         last_metrics = current_metrics
 
@@ -464,6 +465,8 @@ def main() -> None:
     print("[INFO] Training completed.")
 
     summary_metrics = best_metrics or last_metrics
+    per_class_summary = summary_metrics.get("per_class", {})
+    aggregate_metrics = {k: v for k, v in summary_metrics.items() if k != "per_class"}
     hyperparameters = {
         "epochs": args.epochs,
         "batch_size": args.batch_size,
@@ -480,7 +483,8 @@ def main() -> None:
         "num_classes": num_classes,
         "added_classes": added_classes,
         "hyperparameters": hyperparameters,
-        "metrics": summary_metrics,
+        "metrics": aggregate_metrics,
+        "per_class_metrics": per_class_summary,
         "pretrained_state_dict": state_dict_path,
     }
     with open(result_path, "w", encoding="utf-8") as report_file:

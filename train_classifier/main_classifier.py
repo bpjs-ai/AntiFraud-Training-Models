@@ -194,7 +194,7 @@ def main() -> None:
         print(f"Train Loss: {train_loss:.4f}, Acc: {train_acc:.4f}")
         print(train_report)
 
-        val_loss, val_acc, val_report, precision, recall, f1 = evaluate(
+        val_loss, val_acc, val_report, precision, recall, f1, per_class_metrics = evaluate(
             model, val_loader, criterion, device, label_names
         )
         print(
@@ -214,6 +214,7 @@ def main() -> None:
             "precision": precision,
             "recall": recall,
             "f1": f1,
+            "per_class": per_class_metrics,
         }
         last_metrics = current_metrics
 
@@ -233,6 +234,8 @@ def main() -> None:
     print("Training completed.")
 
     summary_metrics = best_metrics or last_metrics
+    per_class_summary = summary_metrics.get("per_class", {})
+    aggregate_metrics = {k: v for k, v in summary_metrics.items() if k != "per_class"}
     hyperparameters = {
         "epochs": cfg.epochs,
         "batch_size": cfg.batch_size,
@@ -249,7 +252,8 @@ def main() -> None:
         "timestamp": now_in_gmt7().isoformat(),
         "num_classes": num_classes,
         "hyperparameters": hyperparameters,
-        "metrics": summary_metrics,
+        "metrics": aggregate_metrics,
+        "per_class_metrics": per_class_summary,
     }
     with open(cfg.result_path, "w", encoding="utf-8") as report_file:
         json.dump(training_summary, report_file, indent=2)

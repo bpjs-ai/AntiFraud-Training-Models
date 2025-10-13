@@ -96,12 +96,33 @@ def evaluate(model, loader, criterion, device, label_names: List[str]):
     avg_loss = total_loss / max(total, 1)
     acc = correct / max(total, 1)
 
-    report = classification_report(all_labels, all_preds, target_names=label_names, zero_division=0)
+    report_dict = classification_report(
+        all_labels,
+        all_preds,
+        target_names=label_names,
+        zero_division=0,
+        output_dict=True,
+    )
+    report_text = classification_report(
+        all_labels,
+        all_preds,
+        target_names=label_names,
+        zero_division=0,
+    )
     macro_precision = precision_score(all_labels, all_preds, average="macro", zero_division=0)
     macro_recall = recall_score(all_labels, all_preds, average="macro", zero_division=0)
     macro_f1 = f1_score(all_labels, all_preds, average="macro", zero_division=0)
 
-    return avg_loss, acc, report, macro_precision, macro_recall, macro_f1
+    per_class_metrics = {
+        label: {
+            "precision": report_dict.get(label, {}).get("precision", 0.0),
+            "recall": report_dict.get(label, {}).get("recall", 0.0),
+            "f1": report_dict.get(label, {}).get("f1-score", 0.0),
+        }
+        for label in label_names
+    }
+
+    return avg_loss, acc, report_text, macro_precision, macro_recall, macro_f1, per_class_metrics
 
 
 def save_label_mapping(label_to_id: Dict[str, int], path: str):
