@@ -80,3 +80,4 @@ class TransferConfig:
 
     # Training tricks
     early_stop_patience: int = 15
+    freeze_backbone: bool = True

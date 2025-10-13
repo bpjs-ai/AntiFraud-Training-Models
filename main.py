@@ -63,7 +63,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--state_dict_s3_key", type=str, default=None)
     parser.add_argument("--label_map_s3_key", type=str, default=None)
     parser.add_argument("--early_stop_patience", type=int, default=None)
-    parser.add_argument("--freeze_backbone", action="store_true")
+    parser.add_argument("--freeze_backbone", default=None, action="store_true")
 
     return parser.parse_args()
 
@@ -143,6 +143,7 @@ def build_transfer_args(args: argparse.Namespace) -> List[str]:
     transfer_mapping = {
         "state_dict_s3_key": "--state_dict_s3_key",
         "label_map_s3_key": "--label_map_s3_key",
+        "freeze_backbone": "--freeze_backbone",
     }
 
     cli_args: List[str] = []

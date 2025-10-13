@@ -1,140 +1,153 @@
-# Classifier Training Pipeline
+# Classifier Training Pipelines
 
-This document explains how to run `main.py`, the orchestrator for the BPJS classifier training pipelines. It covers local execution, Docker workflows, Airflow integration, and the supported command-line arguments.
+This project exposes three Python entry points for training the BPJS hybrid OCR classifier. Use this guide to decide which script to run, understand their arguments, and wire them into Docker or Airflow.
+
+## Entry Points Overview
+
+- `main.py` - high-level orchestrator that can run either training mode and optionally sync data from S3 before launching a run.
+- `train_classifier/main_classifier.py` - standalone full-training pipeline that builds the model from scratch and exports artifacts.
+- `train_classifier/main_classifier_TL.py` - standalone transfer-learning pipeline that reuses a pretrained checkpoint and updates the classifier with new data.
 
 ## Prerequisites
 
 - Python 3.9 or newer.
-- Project dependencies installed locally: `pip install -r requirements.txt`.
-- Access to pretrained artifacts and datasets stored in S3 (optional but recommended).
-- Environment variables (used when downloading from S3):
-  - `S3_CLASSIFIER_PREFIX` – S3 prefix containing the full-training dataset (e.g. `dataset/classifier/`).
-  - `S3_BUCKET_NAME`, `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` (or standard AWS credentials) consumed by `boto3`.
+- Install dependencies: `pip install -r requirements.txt`.
+- Optional but recommended: access to S3 (or compatible storage) for datasets and pretrained artifacts. When using S3, configure:
+  - `S3_BUCKET_NAME`, `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` (or standard AWS credentials).
+  - `S3_CLASSIFIER_PREFIX` for the dataset download performed by `main.py` (defaults to `dataset/classifier` inside the script).
 
-## Running `main.py` Locally
+## Orchestrator (`main.py`)
 
 ```bash
 python main.py [options]
 ```
 
-The pipeline supports two modes via `--mode`:
+`main.py` resolves default directories from the config dataclasses, ensures they exist, optionally wipes and re-syncs `dataset/` from S3, and then delegates to the appropriate inner script.
 
-- `full` (default): runs the original classifier training pipeline from `train_classifier/main_classifier.py`.
-- `transfer`: runs the transfer-learning pipeline from `train_classifier/main_classifier_TL.py`.
-
-Output artifacts are written to the directories defined in `TrainConfig` (full) or
-`TransferConfig` (transfer). Adjust those dataclasses or provide config files when you
-need to customise file locations.
-
-### Common Arguments
-
-These flags are available in both modes:
+### Core Flags
 
 | Argument | Default | Description |
 |----------|---------|-------------|
-| `--mode` | `full` | Select `full` or `transfer` pipeline. |
-| `--dataset-dir` | `dataset` | Root directory for local datasets. |
-| `--skip_download` | _flag_ | Skip S3 dataset sync (only meaningful for `full`). |
-| `--epochs` | `None` | Number of training epochs (falls back to config defaults). |
-| `--batch_size` | `None` | Mini-batch size for dataloaders. |
-| `--num_workers` | `None` | DataLoader worker count. |
-| `--lr_bert` | `None` | Learning rate for the BERT encoder. |
-| `--lr_resnet` | `None` | Learning rate for the ResNet backbone. |
-| `--lr_heads` | `None` | Learning rate for fusion/classifier heads. |
-| `--state_dict_s3_key` | `None` | Override pretrained classifier weights S3 key. |
-| `--label_map_s3_key` | `None` | Override previous label-map S3 key. |
-| `--early_stop_patience` | `None` | Override early-stopping patience. |
-| `--freeze_backbone` | _flag_ | Freeze BERT & ResNet during fine-tuning. |
+| `--mode` | `full` | Select `full` (runs `main_classifier.py`) or `transfer` (runs `main_classifier_TL.py`). |
+| `--dataset-dir` | `dataset` | Root directory for datasets. |
+| `--skip_download` | flag | Skip the S3 dataset sync (avoids deleting `dataset/`). |
+| `--epochs` | `50` | Training epochs used when no override is provided (`TrainConfig.epochs` / `TransferConfig.epochs`). |
+| `--batch_size` | `16` | Mini-batch size for both modes. |
+| `--num_workers` | `8` | PyTorch DataLoader worker count. |
+| `--lr_bert` | `2e-5` | Learning rate for the BERT encoder. |
+| `--lr_resnet` | `1e-4` | Learning rate for ResNet layers. |
+| `--lr_heads` | `1e-4` | Learning rate for fusion/classifier heads. |
+| `--early_stop_patience` | `15` | Epochs to wait before early stopping. |
+| `--state_dict_s3_key` | `outputs_training/state_dict.pt` | (Transfer mode) Default pretrained weights location. |
+| `--label_map_s3_key` | `outputs_training/label2id.json` | (Transfer mode) Default previous label map location. |
+| `--freeze_backbone` | `True` | (Transfer mode) Backbones stay frozen unless you modify the transfer config. |
 
-> Any `None` values fall back to the defaults defined in the underlying training dataclasses.
+> When an override is omitted, the CLI falls back to these concrete defaults sourced from `TrainConfig` (full) or `TransferConfig` (transfer).
 
-### Full-Training Mode
+### Examples
 
-`main.py --mode full`:
-
-- Downloads the dataset from S3 unless `--skip_download` is provided.
-- Launches `train_classifier/main_classifier.py` with the arguments listed above.
-
-**Example:**
+Run a clean full-training experiment with custom learning rate and batch size:
 
 ```bash
-python main.py \
-  --mode full \
-  --dataset-dir dataset \
-  --epochs 25 \
-  --batch_size 64 \
-  --lr_bert 3e-5
+python main.py --mode full --epochs 25 --batch_size 64 --lr_bert 3e-5
 ```
 
-### Transfer-Learning Mode
+Reuse existing datasets and launch the transfer-learning pipeline with a frozen backbone:
 
-`main.py --mode transfer` triggers `train_classifier/main_classifier_TL.py`. In addition to the common flags, it accepts the following options:
+```bash
+python main.py --mode transfer --skip_download --freeze_backbone --epochs 12
+```
+
+## Full Training Script (`train_classifier/main_classifier.py`)
+
+Use this script when you want to execute the full training loop directly, bypassing the orchestrator, or when you need finer control over configuration files.
+
+```bash
+python train_classifier/main_classifier.py [options]
+```
+
+### Flags
 
 | Argument | Default | Description |
 |----------|---------|-------------|
-| `--state_dict_s3_key` | `outputs_training/state_dict.pt` | S3 key to download the pretrained weights when no local artifact is configured. |
-| `--label_map_s3_key` | `outputs_training/label2id.json` | S3 key for the previous label-map. |
-| `--early_stop_patience` | `None` | Override early-stopping patience (defaults to 5). |
-| `--freeze_backbone` | _flag_ | Freeze BERT & ResNet during fine-tuning. |
+| `--config` | `None` | Path to a JSON file that mirrors `TrainConfig` fields. |
+| `--epochs` | `50` | Override epochs at runtime. |
+| `--batch_size` | `16` | Override batch size. |
+| `--num_workers` | `8` | Override CPU worker count. |
+| `--lr_bert` | `2e-5` | Adjust encoder learning rate. |
+| `--lr_resnet` | `1e-4` | Adjust CNN learning rate. |
+| `--lr_heads` | `1e-4` | Adjust classifier head learning rate. |
+| `--early_stop_patience` | `15` | Set early-stopping patience. |
 
-**Examples:**
+The script reads `TrainConfig`, applies overrides (CLI takes precedence over JSON), builds datasets, trains the hybrid model, exports state dict, label map, ONNX graph, and a JSON training report. Artifacts are timestamped and sent to S3 via `S3Handler` when credentials are present.
 
-Minimal run relying on S3 artifacts and defaults:
+**Example**
 
 ```bash
-python main.py --mode transfer
+python train_classifier/main_classifier.py \
+  --config configs/full_training.json \
+  --epochs 40 \
+  --batch_size 32
 ```
 
-Custom artifact locations and hyper-parameters:
+## Transfer Learning Script (`train_classifier/main_classifier_TL.py`)
+
+Run this entry point to fine-tune an existing classifier on new data while preserving previous classes.
 
 ```bash
-python main.py \
-  --mode transfer \
+python train_classifier/main_classifier_TL.py [options]
+```
+
+### Flags
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--state_dict_s3_key` | `outputs_training/state_dict.pt` | Download pretrained weights from S3 when local paths are missing. |
+| `--label_map_s3_key` | `outputs_training/label2id.json` | Download the previous label map from S3 when missing locally. |
+| `--epochs` | `50` | Fine-tuning epochs. |
+| `--batch_size` | `16` | Mini-batch size. |
+| `--num_workers` | `8` | DataLoader and OCR worker count. |
+| `--lr_bert` | `2e-5` | Learning rate for the text encoder. |
+| `--lr_resnet` | `1e-4` | Learning rate for the vision backbone. |
+| `--lr_heads` | `1e-4` | Learning rate for newly initialised heads. |
+| `--early_stop_patience` | `15` | Early-stopping patience. |
+| `--freeze_backbone` | `True` | Disable gradients for BERT and ResNet unless you edit the config. |
+
+The script merges old and new label mappings, reuses pretrained weights, trains with optional class-weight balancing, exports ONNX (when enabled in config), writes a JSON summary, and uploads artifacts to the transfer-specific S3 prefixes.
+
+**Example**
+
+```bash
+python train_classifier/main_classifier_TL.py \
   --state_dict_s3_key outputs_training/state_dict.pt \
   --label_map_s3_key outputs_training/label2id.json \
   --freeze_backbone \
-  --epochs 12 \
-  --batch_size 24
+  --epochs 10
 ```
 
-## Running in Docker
+## Docker Workflow
 
-The repository ships with a single GPU-capable service in `docker-compose.yaml` named `training-app-pytorch`. The service builds from `Dockerfile.pytorch` (target `runtime-gpu`) and mounts local folders for datasets and outputs so you can inspect artifacts directly on the host.
-
-### Build the image
+`docker-compose.yaml` defines a GPU-enabled service (`training-app-pytorch`) built from `Dockerfile.pytorch` (target `runtime-gpu`).
 
 ```bash
 docker compose build training-app-pytorch
-```
-
-### Run the default pipeline
-
-```bash
 docker compose up training-app-pytorch
 ```
 
-By default the service executes `python main.py --mode full --epochs 5`. The compose file maps:
+The default command is `python main.py --mode full --epochs 5`. Adjust behaviour by:
 
-- `./dataset` → `/app/dataset`
-- `./outputs` → `/app/outputs`
-- model caches to `/root/.cache/{huggingface,torch}`
+- Editing the service `command` (e.g. `python train_classifier/main_classifier.py --epochs 30`).
+- Overriding environment variables (`MODE`, `CLASSIFIER_EXTRA_ARGS`, `DATASET_DIR`, `OUTPUT_DIR`, etc.).
+- Supplying credentials via `.env`, automatically consumed by Compose.
+- Tweaking GPU allocation in the `deploy.resources` section (defaults to GPU index 2).
 
-You can override the behaviour in a few ways:
+Mounted volumes map `./dataset` to `/app/dataset`, `./outputs` to `/app/outputs`, and host caches to `/root/.cache/{huggingface,torch}`.
 
-- Update `command:` in `docker-compose.yaml` (for example `python main.py --mode transfer --epochs 10`).
-- Adjust the environment variables already defined in the compose file (`MODE`, `DATASET_DIR`, `OUTPUT_DIR`, etc.). Additional overrides map directly to CLI flags, e.g. add `EPOCHS=30` or `LR_BERT=2e-5`.
-- Supply secrets or credentials via `.env`, which is automatically loaded by the service.
-- Modify the `deploy.resources.reservations.devices` block if you need to expose a different GPU (the sample compose file pins the container to GPU index `2`).
+## Airflow (KubernetesPodOperator)
 
-If you need separate long-running services for full and transfer training, duplicate the service entry in `docker-compose.yaml` with different names, commands, and environment overrides.
-
-## Running from Airflow (KubernetesPodOperator)
-
-Use the built Docker images (`antifraud-training-full` or `antifraud-training-transfer`) with the KubernetesPodOperator. Example:
+Package the training image (`antifraud-training-full` or `antifraud-training-transfer`) and launch with KubernetesPodOperator:
 
 ```python
-from airflow.providers.cncf.kubernetes.operators.kubernetes_pod import KubernetesPodOperator
-
 train_full = KubernetesPodOperator(
     task_id="train_classifier_full",
     name="classifier-full",
@@ -149,13 +162,11 @@ train_full = KubernetesPodOperator(
     get_logs=True,
     is_delete_operator_pod=True,
     startup_timeout_seconds=600,
-    resources={
-        "limit_gpu": 1,
-    },
+    resources={"limit_gpu": 1},
 )
 ```
 
-For transfer learning, switch `image` to `antifraud-training-transfer` (or keep the same image and set `MODE=transfer`) and provide the relevant artifacts:
+For transfer learning, switch the image or set `MODE=transfer` and provide artifact locations:
 
 ```python
 train_transfer = KubernetesPodOperator(
@@ -176,25 +187,21 @@ train_transfer = KubernetesPodOperator(
     secrets=[...],  # mount S3 credentials / AWS secrets
     get_logs=True,
     is_delete_operator_pod=True,
-    resources={
-        "limit_gpu": 1,
-    },
+    resources={"limit_gpu": 1},
 )
 ```
 
-Mount persistent volumes or object stores as needed for `/app/dataset` and `/app/outputs`. GPU scheduling depends on your Kubernetes runtime (e.g. NVIDIA device plugin).
+Mount persistent volumes for `/app/dataset` and `/app/outputs` as required by your cluster setup.
 
 ## Logs and Outputs
 
-- Logs stream to stdout and are timestamped for readability.
-- Artifacts (state dicts, ONNX exports, label maps) are stored in the run folder inside `--output_dir`.
-- Transfer-learning runs maintain previous class weights by merging the supplied label map with new classes.
+- Logs stream to stdout with timestamps.
+- Artifacts (state dicts, label maps, ONNX exports, reports) are written under the configured `output_dir` with run-specific timestamps.
+- Transfer-learning runs merge the historical label map with newly observed classes before exporting artifacts.
 
 ## Troubleshooting
 
-- Ensure all required environment variables are set when using S3 downloads.
-- Confirm GPU availability with `torch.cuda.is_available()` inside your environment if you expect GPU training.
-- Use `--skip_download` (or `SKIP_MODEL_DOWNLOADS=true` in Docker/Airflow) when warm-up downloads are unnecessary.
-- When providing custom CSV or image directories, verify that file paths and label columns follow the expected format (`label/filename`).
-
-For additional customization, inspect `train_classifier/main_classifier.py` (full training) and `train_classifier/main_classifier_TL.py` (transfer learning).
+- Ensure S3 credentials are configured when relying on automatic downloads or uploads.
+- Use `--skip_download` (or `SKIP_MODEL_DOWNLOADS=true` in containerised runs) to avoid deleting local datasets.
+- Confirm GPU availability with `torch.cuda.is_available()` when training on hardware accelerators.
+- Validate custom CSVs and image layouts match the expectations in `train_classifier.dataset`.
