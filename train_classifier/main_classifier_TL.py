@@ -51,14 +51,14 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--state_dict_s3_key",
         type=str,
-        default=None,
-        help="S3 key to download the pretrained state_dict when --state_dict_path is not provided.",
+        default=defaults.state_dict_s3_key,
+        help="S3 key to download the pretrained state_dict.",
     )
     parser.add_argument(
         "--label_map_s3_key",
         type=str,
-        default=None,
-        help="S3 key to download the previous label2id mapping when no local path is provided.",
+        default=defaults.label_map_s3_key,
+        help="S3 key to download the previous label2id mapping.",
     )
     parser.add_argument(
         "--epochs",
@@ -284,42 +284,26 @@ def main() -> None:
 
     s3_handler: Optional[S3Handler] = None
 
-    state_dict_path = defaults.state_dict_path
-    if state_dict_path:
-        if not os.path.exists(state_dict_path):
-            raise FileNotFoundError(f"state_dict not found at {state_dict_path}")
-    else:
-        s3_handler, state_dict_path = download_artifact(
-            s3_handler,
-            args.state_dict_s3_key,
-            defaults.artifact_dir,
-            "pretrained state_dict",
-        )
-        if state_dict_path is None:
-            raise FileNotFoundError("Unable to obtain pretrained state_dict.")
+    state_dict_s3_key = args.state_dict_s3_key or defaults.state_dict_s3_key
+    if not state_dict_s3_key:
+        raise ValueError("state_dict_s3_key must be provided to download the pretrained weights.")
+    s3_handler, state_dict_path = download_artifact(
+        s3_handler,
+        state_dict_s3_key,
+        defaults.artifact_dir,
+        "pretrained state_dict",
+    )
 
     previous_mapping: Dict[str, int] = {}
-    label_map_source: Optional[str] = None
-    if defaults.previous_label_map_path:
-        if not os.path.exists(defaults.previous_label_map_path):
-            raise FileNotFoundError(
-                f"Previous label map not found at {defaults.previous_label_map_path}."
-            )
-        label_map_source = defaults.previous_label_map_path
-    elif args.label_map_s3_key:
-        try:
-            s3_handler, label_map_source = download_artifact(
-                s3_handler,
-                args.label_map_s3_key,
-                defaults.artifact_dir,
-                "previous label mapping",
-            )
-        except FileNotFoundError:
-            print(
-                f"[WARNING] Failed to download label map from S3 key '{args.label_map_s3_key}'. "
-                "Proceeding without the previous mapping."
-            )
-            label_map_source = None
+    label_map_s3_key = args.label_map_s3_key or defaults.label_map_s3_key
+    if not label_map_s3_key:
+        raise ValueError("label_map_s3_key must be provided to download the previous label mapping.")
+    s3_handler, label_map_source = download_artifact(
+        s3_handler,
+        label_map_s3_key,
+        defaults.artifact_dir,
+        "previous label mapping",
+    )
 
     if label_map_source and os.path.exists(label_map_source):
         previous_mapping = load_label_mapping(label_map_source)

@@ -38,11 +38,11 @@ python main.py [options]
 | `--lr_resnet`           | `1e-4`                           | Learning rate for ResNet layers.                                                                        |
 | `--lr_heads`            | `1e-4`                           | Learning rate for fusion/classifier heads.                                                              |
 | `--early_stop_patience` | `15`                             | Epochs to wait before early stopping.                                                                   |
-| `--state_dict_s3_key`   | `outputs_training/state_dict.pt` | (Transfer mode) Default pretrained weights location.                                                    |
-| `--label_map_s3_key`    | `outputs_training/label2id.json` | (Transfer mode) Default previous label map location.                                                    |
+| `--state_dict_s3_key`   | `outputs_training/state_dict.pt` | (Transfer mode) S3 key that is **always** downloaded for pretrained weights.                            |
+| `--label_map_s3_key`    | `outputs_training/label2id.json` | (Transfer mode) S3 key that is **always** downloaded for the historical label map.                      |
 | `--freeze_backbone`     | `flag`                           | (Transfer mode) Backbones stay frozen unless you modify the transfer config.                            |
 
-> When an override is omitted, the CLI falls back to these concrete defaults sourced from `TrainConfig` (full) or `TransferConfig` (transfer).
+> When an override is omitted, the CLI falls back to these concrete defaults sourced from `TrainConfig` (full) or `TransferConfig` (transfer). The transfer workflow requires that the referenced S3 keys exist; it downloads both artifacts into `pretrained_artifacts/` on every run.
 
 ### Examples
 
@@ -102,8 +102,8 @@ python train_classifier/main_classifier_TL.py [options]
 
 | Argument                  | Default                            | Description                                                       |
 | ------------------------- | ---------------------------------- | ----------------------------------------------------------------- |
-| `--state_dict_s3_key`   | `outputs_training/state_dict.pt` | Download pretrained weights from S3 when local paths are missing. |
-| `--label_map_s3_key`    | `outputs_training/label2id.json` | Download the previous label map from S3 when missing locally.     |
+| `--state_dict_s3_key`   | `outputs_training/state_dict.pt` | S3 key that is always downloaded for pretrained weights.          |
+| `--label_map_s3_key`    | `outputs_training/label2id.json` | S3 key that is always downloaded for the previous label map.      |
 | `--epochs`              | `50`                             | Fine-tuning epochs.                                               |
 | `--batch_size`          | `16`                             | Mini-batch size.                                                  |
 | `--num_workers`         | `8`                              | DataLoader and OCR worker count.                                  |
@@ -113,7 +113,7 @@ python train_classifier/main_classifier_TL.py [options]
 | `--early_stop_patience` | `15`                             | Early-stopping patience.                                          |
 | `--freeze_backbone`     | `flag`                           | Disable gradients for BERT and ResNet unless you edit the config. |
 
-The script merges old and new label mappings, reuses pretrained weights, trains with optional class-weight balancing, exports ONNX (when enabled in config), writes a JSON summary, and uploads artifacts to the transfer-specific S3 prefixes.
+The script downloads both artifacts into `pretrained_artifacts/`, merges old and new label mappings, reuses pretrained weights, trains with optional class-weight balancing, exports ONNX (when enabled in config), writes a JSON summary, and uploads artifacts to the transfer-specific S3 prefixes. If either S3 key is missing or the download fails, the run stops with a clear error so you can correct the inputs.
 
 **Example**
 

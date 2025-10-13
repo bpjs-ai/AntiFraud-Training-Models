@@ -54,11 +54,11 @@ class TransferConfig:
 
     bert_model_name: str = "indobenchmark/indobert-base-p2"
 
-    state_dict_path: Optional[str] = "outputs_training/full/state_dicts/state_dict.pt"
+    state_dict_path: Optional[str] = None
+
+    previous_label_map_path: Optional[str] = None
     
-    previous_label_map_path: Optional[str] = "outputs_training/full/state_dicts/label2id.json"
-    
-    artifact_dir: str = "outputs_training/full/state_dicts"
+    artifact_dir: str = "pretrained_artifacts"
     export_onnx: bool = True
 
     # Outputs
