@@ -1,11 +1,4 @@
-﻿"""Transfer learning pipeline for the Hybrid OCR classifier.
-
-This script fine-tunes a previously trained model on a new dataset while keeping
-existing classes intact. It can add new classes on top of the previous label
-set and will reuse the pretrained weights downloaded from S3 by default.
-"""
-
-import argparse
+﻿import argparse
 import json
 import os
 from datetime import datetime, timedelta, timezone
@@ -112,7 +105,6 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--freeze_backbone",
         action="store_true",
-        default=defaults.freeze_backbone,
         help="Freeze BERT and ResNet by disabling gradients for those modules.",
     )
     return parser.parse_args()

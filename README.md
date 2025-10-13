@@ -26,21 +26,21 @@ python main.py [options]
 
 ### Core Flags
 
-| Argument | Default | Description |
-|----------|---------|-------------|
-| `--mode` | `full` | Select `full` (runs `main_classifier.py`) or `transfer` (runs `main_classifier_TL.py`). |
-| `--dataset-dir` | `dataset` | Root directory for datasets. |
-| `--skip_download` | flag | Skip the S3 dataset sync (avoids deleting `dataset/`). |
-| `--epochs` | `50` | Training epochs used when no override is provided (`TrainConfig.epochs` / `TransferConfig.epochs`). |
-| `--batch_size` | `16` | Mini-batch size for both modes. |
-| `--num_workers` | `8` | PyTorch DataLoader worker count. |
-| `--lr_bert` | `2e-5` | Learning rate for the BERT encoder. |
-| `--lr_resnet` | `1e-4` | Learning rate for ResNet layers. |
-| `--lr_heads` | `1e-4` | Learning rate for fusion/classifier heads. |
-| `--early_stop_patience` | `15` | Epochs to wait before early stopping. |
-| `--state_dict_s3_key` | `outputs_training/state_dict.pt` | (Transfer mode) Default pretrained weights location. |
-| `--label_map_s3_key` | `outputs_training/label2id.json` | (Transfer mode) Default previous label map location. |
-| `--freeze_backbone` | `True` | (Transfer mode) Backbones stay frozen unless you modify the transfer config. |
+| Argument                  | Default                            | Description                                                                                             |
+| ------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `--mode`                | `full`                           | Select `full` (runs `main_classifier.py`) or `transfer` (runs `main_classifier_TL.py`).         |
+| `--dataset-dir`         | `dataset`                        | Root directory for datasets.                                                                            |
+| `--skip_download`       | flag                               | Skip the S3 dataset sync (avoids deleting `dataset/`).                                                |
+| `--epochs`              | `50`                             | Training epochs used when no override is provided (`TrainConfig.epochs` / `TransferConfig.epochs`). |
+| `--batch_size`          | `16`                             | Mini-batch size for both modes.                                                                         |
+| `--num_workers`         | `8`                              | PyTorch DataLoader worker count.                                                                        |
+| `--lr_bert`             | `2e-5`                           | Learning rate for the BERT encoder.                                                                     |
+| `--lr_resnet`           | `1e-4`                           | Learning rate for ResNet layers.                                                                        |
+| `--lr_heads`            | `1e-4`                           | Learning rate for fusion/classifier heads.                                                              |
+| `--early_stop_patience` | `15`                             | Epochs to wait before early stopping.                                                                   |
+| `--state_dict_s3_key`   | `outputs_training/state_dict.pt` | (Transfer mode) Default pretrained weights location.                                                    |
+| `--label_map_s3_key`    | `outputs_training/label2id.json` | (Transfer mode) Default previous label map location.                                                    |
+| `--freeze_backbone`     | `flag`                           | (Transfer mode) Backbones stay frozen unless you modify the transfer config.                            |
 
 > When an override is omitted, the CLI falls back to these concrete defaults sourced from `TrainConfig` (full) or `TransferConfig` (transfer).
 
@@ -68,16 +68,16 @@ python train_classifier/main_classifier.py [options]
 
 ### Flags
 
-| Argument | Default | Description |
-|----------|---------|-------------|
-| `--config` | `None` | Path to a JSON file that mirrors `TrainConfig` fields. |
-| `--epochs` | `50` | Override epochs at runtime. |
-| `--batch_size` | `16` | Override batch size. |
-| `--num_workers` | `8` | Override CPU worker count. |
-| `--lr_bert` | `2e-5` | Adjust encoder learning rate. |
-| `--lr_resnet` | `1e-4` | Adjust CNN learning rate. |
-| `--lr_heads` | `1e-4` | Adjust classifier head learning rate. |
-| `--early_stop_patience` | `15` | Set early-stopping patience. |
+| Argument                  | Default  | Description                                              |
+| ------------------------- | -------- | -------------------------------------------------------- |
+| `--config`              | `None` | Path to a JSON file that mirrors `TrainConfig` fields. |
+| `--epochs`              | `50`   | Override epochs at runtime.                              |
+| `--batch_size`          | `16`   | Override batch size.                                     |
+| `--num_workers`         | `8`    | Override CPU worker count.                               |
+| `--lr_bert`             | `2e-5` | Adjust encoder learning rate.                            |
+| `--lr_resnet`           | `1e-4` | Adjust CNN learning rate.                                |
+| `--lr_heads`            | `1e-4` | Adjust classifier head learning rate.                    |
+| `--early_stop_patience` | `15`   | Set early-stopping patience.                             |
 
 The script reads `TrainConfig`, applies overrides (CLI takes precedence over JSON), builds datasets, trains the hybrid model, exports state dict, label map, ONNX graph, and a JSON training report. Artifacts are timestamped and sent to S3 via `S3Handler` when credentials are present.
 
@@ -100,18 +100,18 @@ python train_classifier/main_classifier_TL.py [options]
 
 ### Flags
 
-| Argument | Default | Description |
-|----------|---------|-------------|
-| `--state_dict_s3_key` | `outputs_training/state_dict.pt` | Download pretrained weights from S3 when local paths are missing. |
-| `--label_map_s3_key` | `outputs_training/label2id.json` | Download the previous label map from S3 when missing locally. |
-| `--epochs` | `50` | Fine-tuning epochs. |
-| `--batch_size` | `16` | Mini-batch size. |
-| `--num_workers` | `8` | DataLoader and OCR worker count. |
-| `--lr_bert` | `2e-5` | Learning rate for the text encoder. |
-| `--lr_resnet` | `1e-4` | Learning rate for the vision backbone. |
-| `--lr_heads` | `1e-4` | Learning rate for newly initialised heads. |
-| `--early_stop_patience` | `15` | Early-stopping patience. |
-| `--freeze_backbone` | `True` | Disable gradients for BERT and ResNet unless you edit the config. |
+| Argument                  | Default                            | Description                                                       |
+| ------------------------- | ---------------------------------- | ----------------------------------------------------------------- |
+| `--state_dict_s3_key`   | `outputs_training/state_dict.pt` | Download pretrained weights from S3 when local paths are missing. |
+| `--label_map_s3_key`    | `outputs_training/label2id.json` | Download the previous label map from S3 when missing locally.     |
+| `--epochs`              | `50`                             | Fine-tuning epochs.                                               |
+| `--batch_size`          | `16`                             | Mini-batch size.                                                  |
+| `--num_workers`         | `8`                              | DataLoader and OCR worker count.                                  |
+| `--lr_bert`             | `2e-5`                           | Learning rate for the text encoder.                               |
+| `--lr_resnet`           | `1e-4`                           | Learning rate for the vision backbone.                            |
+| `--lr_heads`            | `1e-4`                           | Learning rate for newly initialised heads.                        |
+| `--early_stop_patience` | `15`                             | Early-stopping patience.                                          |
+| `--freeze_backbone`     | `flag`                           | Disable gradients for BERT and ResNet unless you edit the config. |
 
 The script merges old and new label mappings, reuses pretrained weights, trains with optional class-weight balancing, exports ONNX (when enabled in config), writes a JSON summary, and uploads artifacts to the transfer-specific S3 prefixes.
 
