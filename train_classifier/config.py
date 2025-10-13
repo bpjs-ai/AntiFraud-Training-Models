@@ -34,7 +34,7 @@ class TrainConfig:
     early_stop_patience: int = 15
 
     # Output
-    output_dir: str = "outputs/full"
+    output_dir: str = "outputs_training/full"
     best_state_dict_path: str = "state_dicts/best_state_dict.pt"
     label_map_path: str = "labelmaps/label2id.json"
     best_onnx_model_path: str = "models/full_model.onnx"
@@ -54,15 +54,15 @@ class TransferConfig:
 
     bert_model_name: str = "indobenchmark/indobert-base-p2"
 
-    state_dict_path: Optional[str] = "pretrained_artifacts/state_dict.pt"
+    state_dict_path: Optional[str] = "outputs_training/full/state_dicts/state_dict.pt"
     
-    previous_label_map_path: Optional[str] = "pretrained_artifacts/label2id.json"
+    previous_label_map_path: Optional[str] = "outputs_training/full/state_dicts/label2id.json"
     
-    artifact_dir: str = "pretrained_artifacts"
+    artifact_dir: str = "outputs_training/full/state_dicts"
     export_onnx: bool = True
 
     # Outputs
-    output_dir: str = "outputs/transfer"
+    output_dir: str = "outputs_training/transfer"
     label_map_s3_key: str = "outputs_training/label2id.json"
     state_dict_s3_key: str = "outputs_training/state_dict.pt"
     label_map_path: str = "labelmaps/label2id_transfer.json"
