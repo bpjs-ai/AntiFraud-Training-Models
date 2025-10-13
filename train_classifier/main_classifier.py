@@ -42,6 +42,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lr_bert", type=float, default=defaults.lr_bert)
     parser.add_argument("--lr_resnet", type=float, default=defaults.lr_resnet)
     parser.add_argument("--lr_heads", type=float, default=defaults.lr_heads)
+    parser.add_argument("--early_stop_patience", type=int, default=defaults.early_stop_patience)
 
     return parser.parse_args()
 
@@ -61,7 +62,7 @@ def load_config(args: argparse.Namespace) -> TrainConfig:
             if hasattr(cfg, key):
                 setattr(cfg, key, value)
 
-    for field in ("epochs", "batch_size", "num_workers", "lr_bert", "lr_resnet", "lr_heads"):
+    for field in ("epochs", "batch_size", "num_workers", "lr_bert", "lr_resnet", "lr_heads", "early_stop_patience"):
         override = getattr(args, field, None)
         if override is not None:
             setattr(cfg, field, override)

@@ -127,6 +127,7 @@ def build_common_classifier_args(args: argparse.Namespace) -> List[str]:
         "lr_bert": "--lr_bert",
         "lr_resnet": "--lr_resnet",
         "lr_heads": "--lr_heads",
+        "early_stop_patience": "--early_stop_patience",
     }
 
     for attr, flag in common_mapping.items():
@@ -142,7 +143,6 @@ def build_transfer_args(args: argparse.Namespace) -> List[str]:
     transfer_mapping = {
         "state_dict_s3_key": "--state_dict_s3_key",
         "label_map_s3_key": "--label_map_s3_key",
-        "early_stop_patience": "--early_stop_patience",
     }
 
     cli_args: List[str] = []
