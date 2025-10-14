@@ -8,7 +8,7 @@ python-multipart==0.0.19
 python_jose==3.5.0
 pydantic_settings==2.10.1
 cryptography==45.0.6
-
+pyodbc==5.2.0
 # Untuk operasi file CSV (sudah di-cover oleh pandas)
 # Untuk operasi Excel (sudah di-cover oleh openpyxl)
 markdown==3.6 
