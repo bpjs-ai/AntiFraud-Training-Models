@@ -30,5 +30,4 @@ COPY . .
 # Expose port (opsional, untuk dokumentasi)
 EXPOSE 8150
 
-# Jalankan aplikasi menggunakan uvicorn
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8150"]
+ENTRYPOINT ["/bin/bash", "-lc"]
