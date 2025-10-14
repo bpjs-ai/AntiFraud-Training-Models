@@ -1,4 +1,4 @@
-name: Training AI Build and Push
+name: Training DB Build and Push
 
 on:
   push:
