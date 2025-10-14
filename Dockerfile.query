@@ -25,9 +25,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements_db.txt
 
 # Copy seluruh kode aplikasi ke container
-COPY . .
-
-# Expose port (opsional, untuk dokumentasi)
-EXPOSE 8150
+# Copy file util tunggal
+COPY utils/update_parameter.py ./utils/update_parameter.py
 
 ENTRYPOINT ["/bin/bash", "-lc"]

@@ -59,9 +59,6 @@ def update_training_and_classifier(training_id: str, paths_model: str, acc: str)
 
 if __name__ == "__main__":
     import sys
-    if len(sys.argv) != 4:
-        print("Usage: python update_training.py <training_id> <paths_model> <acc_json>")
-        sys.exit(1)
 
     training_id = sys.argv[1]
     paths_model = sys.argv[2]
