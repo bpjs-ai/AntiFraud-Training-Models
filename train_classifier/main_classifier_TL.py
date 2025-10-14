@@ -528,20 +528,14 @@ def main() -> None:
         upload_handler.upload_file(str(result_path), result_key)
         upload_handler.upload_file(str(best_state_dict_path), state_dict_key)
 
-        report_bucket = getattr(upload_handler, "bucket_name", None)
-        report_destination = (
-            f"s3://{report_bucket}/{result_key.lstrip('/')}" if report_bucket else result_key
-        )
         report_filename = os.path.basename(result_key)
 
-        print(f"✅ ONNX model saved at {onnx_path}")
-        print(
-            f"[INFO] Uploaded ONNX model to {onnx_key}, "
-            f"label map to {label_map_key}, and training summary to {result_key}"
-        )
-        print(
-            f"[INFO] Training report stored at {report_destination} (file: {report_filename})"
-        )
+        # print(f"✅ ONNX model saved at {onnx_path}")
+        print(f"[INFO] Uploaded ONNX model to {onnx_key}")
+        print(f"[INFO] Uploaded label map to {label_map_key}")
+        print(f"[INFO] Uploaded training report to {result_key} (file: {report_filename})")
+        print(f"[INFO] Pretrained state dict used: {pretrained_state_dict_source}")
+        print(f"[INFO] Models Accuracy: {summary_metrics.get('val_accuracy', 'N/A')}")
 
 
 if __name__ == "__main__":

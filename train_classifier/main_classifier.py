@@ -323,20 +323,14 @@ def main() -> None:
     s3_handler.upload_file(cfg.result_path, result_key)
     s3_handler.upload_file(cfg.best_state_dict_path, trained_state_dict_key)
 
-    report_bucket = getattr(s3_handler, "bucket_name", None)
-    report_destination = (
-        f"s3://{report_bucket}/{result_key.lstrip('/')}" if report_bucket else result_key
-    )
     report_filename = os.path.basename(result_key)
 
-    print(f"✅ ONNX model saved at {cfg.best_onnx_model_path}")
-    print(
-        f"[INFO] Uploaded ONNX model to {onnx_key}, label map to {label_map_key}, "
-        f"training summary to {result_key}"
-    )
-    print(
-        f"[INFO] Training report stored at {report_destination} (file: {report_filename})"
-    )
+    # print(f"✅ ONNX model saved at {cfg.best_onnx_model_path}")
+    print(f"[INFO] Uploaded ONNX model to {onnx_key}")
+    print(f"[INFO] uploaded Labelmap to {label_map_key}")
+    print(f"[INFO] Uploaded Report at {report_filename}")
+    print(f"[INFO] Models Accuracy: {summary_metrics.get('val_accuracy', 'N/A'):.4f}")
+
 
 
 if __name__ == "__main__":
