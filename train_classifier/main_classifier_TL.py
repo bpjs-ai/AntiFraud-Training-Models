@@ -532,11 +532,11 @@ def main() -> None:
 
         # print(f"✅ ONNX model saved at {onnx_path}")
         print(f"[INFO] Uploaded ONNX model to {onnx_key}")
-        print(f"[INFO] Uploaded label map to {label_map_key}")
-        print(f"[INFO] Uploaded training report to {result_key} (file: {report_filename})")
-        print(f"[INFO] Pretrained state dict used: {pretrained_state_dict_source}")
+        print(f"[INFO] Uploaded labelmap to {label_map_key}")
+        print(f"[INFO] Uploaded Report to {result_key} (file: {report_filename})")
+        
+        print(f"[INFO] Pretrained State Dict used: {pretrained_state_dict_source}")
         print(f"[INFO] Models Accuracy: {summary_metrics.get('val_accuracy', 'N/A')}")
-
 
 if __name__ == "__main__":
     main()

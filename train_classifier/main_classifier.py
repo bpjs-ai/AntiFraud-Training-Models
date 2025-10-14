@@ -328,10 +328,8 @@ def main() -> None:
     # print(f"✅ ONNX model saved at {cfg.best_onnx_model_path}")
     print(f"[INFO] Uploaded ONNX model to {onnx_key}")
     print(f"[INFO] uploaded Labelmap to {label_map_key}")
-    print(f"[INFO] Uploaded Report at {report_filename}")
+    print(f"[INFO] Uploaded Report to {report_filename}")
     print(f"[INFO] Models Accuracy: {summary_metrics.get('val_accuracy', 'N/A'):.4f}")
-
-
 
 if __name__ == "__main__":
     main()
