@@ -24,7 +24,7 @@ jobs:
         id: metadata
         uses: docker/metadata-action@v3
         with:
-          images: ghcr.io/bpjs-ai/training-ai
+          images: ghcr.io/bpjs-ai/training-db
           tags: 1.0.0
 
       - name: Log in to Docker Hub
