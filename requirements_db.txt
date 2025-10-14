@@ -1,0 +1,14 @@
+uvicorn==0.35.0
+sqlalchemy==2.0.20
+pandas==2.3.1
+openpyxl==3.1.2
+python-dotenv==1.0.1
+pydantic==2.11.7
+python-multipart==0.0.19
+python_jose==3.5.0
+pydantic_settings==2.10.1
+cryptography==45.0.6
+
+# Untuk operasi file CSV (sudah di-cover oleh pandas)
+# Untuk operasi Excel (sudah di-cover oleh openpyxl)
+markdown==3.6 
