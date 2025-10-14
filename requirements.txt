@@ -11,6 +11,7 @@ botocore>=1.31.0
 python-dotenv>=1.0.0
 tqdm>=4.65.0
 onnx
+pyodbc==5.2.0
 onnxruntime
 matplotlib>=3.7.0
 seaborn>=0.12.0
