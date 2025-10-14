@@ -1,0 +1,34 @@
+# Gunakan Python 3.11 slim sebagai base image
+FROM python:3.11-slim
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies dan ODBC driver
+RUN apt-get update && \
+    apt-get install -y curl apt-transport-https ca-certificates gnupg2 unixodbc-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+# Tambahkan Microsoft repository dan key
+RUN curl https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /etc/apt/trusted.gpg.d/microsoft.gpg && \
+    curl https://packages.microsoft.com/config/ubuntu/20.04/prod.list -o /etc/apt/sources.list.d/mssql-release.list
+
+# Install ODBC driver (msodbcsql17)
+RUN apt-get update && ACCEPT_EULA=Y apt-get install -y msodbcsql17 && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy requirements terlebih dahulu untuk layer caching
+COPY requirements_db.txt ./requirements_db.txt
+
+# Install Python dependencies
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements_db.txt
+
+# Copy seluruh kode aplikasi ke container
+COPY . .
+
+# Expose port (opsional, untuk dokumentasi)
+EXPOSE 8150
+
+# Jalankan aplikasi menggunakan uvicorn
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8150"]
