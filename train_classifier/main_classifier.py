@@ -247,6 +247,13 @@ def main() -> None:
         "scheduler_patience": cfg.scheduler_patience,
         "early_stop_patience": cfg.early_stop_patience,
     }
+    trained_state_dict_key = f"outputs_training/full/state_dicts/{Path(cfg.best_state_dict_path).name}"
+    bucket_name = os.getenv("S3_BUCKET_NAME")
+    trained_state_dict_source = (
+        f"s3://{bucket_name}/{trained_state_dict_key.lstrip('/')}"
+        if bucket_name
+        else trained_state_dict_key
+    )
     training_summary = {
         "mode": "full",
         "timestamp": now_in_gmt7().isoformat(),
@@ -254,6 +261,7 @@ def main() -> None:
         "hyperparameters": hyperparameters,
         "metrics": aggregate_metrics,
         "per_class_metrics": per_class_summary,
+        "trained_model_path": trained_state_dict_source,
     }
     with open(cfg.result_path, "w", encoding="utf-8") as report_file:
         json.dump(training_summary, report_file, indent=2)
@@ -306,11 +314,29 @@ def main() -> None:
     )
 
     s3_handler = S3Handler()
-    s3_handler.upload_file(cfg.best_onnx_model_path, f"outputs_training/full/models/{os.path.basename(cfg.best_onnx_model_path)}")
-    s3_handler.upload_file(cfg.label_map_path, f"outputs_training/full/labelmaps/{os.path.basename(cfg.label_map_path)}")
-    s3_handler.upload_file(cfg.result_path, f"outputs_training/full/results/{os.path.basename(cfg.result_path)}")
-    s3_handler.upload_file(cfg.best_state_dict_path, f"outputs_training/full/state_dicts/{os.path.basename(cfg.best_state_dict_path)}")
+    onnx_key = f"outputs_training/full/models/{os.path.basename(cfg.best_onnx_model_path)}"
+    label_map_key = f"outputs_training/full/labelmaps/{os.path.basename(cfg.label_map_path)}"
+    result_key = f"outputs_training/full/results/{os.path.basename(cfg.result_path)}"
+
+    s3_handler.upload_file(cfg.best_onnx_model_path, onnx_key)
+    s3_handler.upload_file(cfg.label_map_path, label_map_key)
+    s3_handler.upload_file(cfg.result_path, result_key)
+    s3_handler.upload_file(cfg.best_state_dict_path, trained_state_dict_key)
+
+    report_bucket = getattr(s3_handler, "bucket_name", None)
+    report_destination = (
+        f"s3://{report_bucket}/{result_key.lstrip('/')}" if report_bucket else result_key
+    )
+    report_filename = os.path.basename(result_key)
+
     print(f"✅ ONNX model saved at {cfg.best_onnx_model_path}")
+    print(
+        f"[INFO] Uploaded ONNX model to {onnx_key}, label map to {label_map_key}, "
+        f"training summary to {result_key}"
+    )
+    print(
+        f"[INFO] Training report stored at {report_destination} (file: {report_filename})"
+    )
 
 
 if __name__ == "__main__":

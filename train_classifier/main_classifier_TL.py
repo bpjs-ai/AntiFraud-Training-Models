@@ -453,6 +453,15 @@ def main() -> None:
         "early_stop_patience": args.early_stop_patience,
         "freeze_backbone": args.freeze_backbone,
     }
+    trained_state_dict_key = f"outputs_training/transfer/state_dicts/{best_state_dict_path.name}"
+    trained_state_dict_source = trained_state_dict_key
+    if trained_state_dict_source and s3_handler and getattr(s3_handler, "bucket_name", None):
+        trained_state_dict_source = f"s3://{s3_handler.bucket_name}/{trained_state_dict_source.lstrip('/')}"
+    pretrained_state_dict_source = state_dict_s3_key
+    if pretrained_state_dict_source and not pretrained_state_dict_source.startswith("s3://"):
+        if s3_handler and getattr(s3_handler, "bucket_name", None):
+            s3_key = pretrained_state_dict_source.lstrip("/")
+            pretrained_state_dict_source = f"s3://{s3_handler.bucket_name}/{s3_key}"
     training_summary = {
         "mode": "transfer",
         "timestamp": now_in_gmt7().isoformat(),
@@ -461,7 +470,8 @@ def main() -> None:
         "hyperparameters": hyperparameters,
         "metrics": aggregate_metrics,
         "per_class_metrics": per_class_summary,
-        "pretrained_state_dict": state_dict_path,
+        "pretrained_state_dict": pretrained_state_dict_source or state_dict_path,
+        "trained_model_path": trained_state_dict_source,
     }
     with open(result_path, "w", encoding="utf-8") as report_file:
         json.dump(training_summary, report_file, indent=2)
@@ -511,17 +521,26 @@ def main() -> None:
         onnx_key = f"outputs_training/transfer/models/{onnx_path.name}"
         label_map_key = f"outputs_training/transfer/labelmaps/{label_map_path.name}"
         result_key = f"outputs_training/transfer/results/{result_path.name}"
-        state_dict_key = f"outputs_training/transfer/state_dicts/{best_state_dict_path.name}"
+        state_dict_key = trained_state_dict_key
 
         upload_handler.upload_file(str(onnx_path), onnx_key)
         upload_handler.upload_file(str(label_map_path), label_map_key)
         upload_handler.upload_file(str(result_path), result_key)
         upload_handler.upload_file(str(best_state_dict_path), state_dict_key)
 
+        report_bucket = getattr(upload_handler, "bucket_name", None)
+        report_destination = (
+            f"s3://{report_bucket}/{result_key.lstrip('/')}" if report_bucket else result_key
+        )
+        report_filename = os.path.basename(result_key)
+
         print(f"✅ ONNX model saved at {onnx_path}")
         print(
             f"[INFO] Uploaded ONNX model to {onnx_key}, "
             f"label map to {label_map_key}, and training summary to {result_key}"
+        )
+        print(
+            f"[INFO] Training report stored at {report_destination} (file: {report_filename})"
         )
 
 
