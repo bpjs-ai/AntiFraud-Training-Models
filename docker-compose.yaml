@@ -10,7 +10,7 @@ services:
     shm_size: "2g"
     container_name: training-app-pytorch
     command: >
-      python main.py --mode full --epochs 5 --freeze_backbone
+      python main.py --mode full --epochs 1 
     volumes:
       - ./dataset:/app/dataset
       - ./outputs:/app/outputs
