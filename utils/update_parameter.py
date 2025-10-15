@@ -1,7 +1,7 @@
 import os
 from sqlalchemy import create_engine, text
 
-def update_training_and_classifier(training_id: str, paths_model: str, acc: str):
+def update_training_and_classifier(training_id: str, paths_model: str, path_label: str, acc: str):
     """
     Fungsi ini mengupdate status training dan melakukan upsert pada tabel classifier_collection
     dengan menggunakan SQLAlchemy untuk menghindari SQL injection dan credential leak.
@@ -43,15 +43,17 @@ def update_training_and_classifier(training_id: str, paths_model: str, acc: str)
                 USING (SELECT :training_id AS training_process_id) AS source
                 ON target.training_process_id = source.training_process_id
                 WHEN MATCHED THEN
-                    UPDATE SET model_path = :paths_model, accuracy = :acc
+                    UPDATE SET model_path = :paths_model, accuracy = :acc, label_path = :path_label
                 WHEN NOT MATCHED THEN
-                    INSERT (training_process_id, model_path, accuracy)
-                    VALUES (:training_id, :paths_model, :acc);
+                    INSERT (training_process_id, model_path, accuracy, label_path)
+                    VALUES (:training_id, :paths_model, :acc, :path_label);
+                    
             """),
             {
                 "training_id": training_id,
                 "paths_model": paths_model,
-                "acc": acc
+                "acc": acc,
+                "path_label": path_label
             }
         )
 
@@ -62,6 +64,7 @@ if __name__ == "__main__":
 
     training_id = sys.argv[1]
     paths_model = sys.argv[2]
-    acc = sys.argv[3]
+    path_label = sys.argv[3]
+    acc = sys.argv[4]
 
-    update_training_and_classifier(training_id, paths_model, acc)
+    update_training_and_classifier(training_id, paths_model, path_label, acc)
