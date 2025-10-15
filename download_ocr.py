@@ -13,9 +13,9 @@ def download_classifier_dataset(mode) -> None:
     """Download the classifier dataset from S3 when configured."""
     prefix = "dataset/classifier"
     if mode == "full":
-        target_dir = Path(TrainConfig.dataset_dir)
+        target_dir = Path(TrainConfig.image_root_dir)
     elif mode == "transfer":
-        target_dir = Path(TransferConfig.dataset_dir)
+        target_dir = Path(TransferConfig.image_root_dir)
     else:
         logger.warning("Unknown mode '%s', skipping dataset download.")
         return
