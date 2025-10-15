@@ -532,7 +532,7 @@ def main() -> None:
 
         # print(f"✅ ONNX model saved at {onnx_path}")
         print(f"[INFO] Uploaded ONNX model to {onnx_key}")
-        print(f"[INFO] Uploaded labelmap to {label_map_key}")
+        print(f"[INFO] Uploaded Labelmap to {label_map_key}")
         print(f"[INFO] Uploaded Report to {result_key}")
         
         print(f"[INFO] Pretrained State Dict used: {state_dict_s3_key}")
