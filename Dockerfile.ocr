@@ -1,0 +1,34 @@
+FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+# System dependencies for OpenCV/Paddle runtime
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1 \
+    libglib2.0-0 \
+    libxrender1 \
+    libxext6 \
+    libsm6 \
+    libgomp1 \
+    ccache \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
+
+
+COPY requirements_ocr.txt ./requirements_ocr.txt
+
+# Install Python dependencies
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements_ocr.txt
+
+COPY . .
+
+COPY run_pipeline.sh /app/run_pipeline.sh
+RUN chmod +x /app/run_pipeline.sh
+
+CMD ["./run_pipeline.sh"]
+

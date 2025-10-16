@@ -211,7 +211,6 @@ def main() -> None:
     logger.info("Dataset directory: %s", Path(args.dataset_dir).resolve())
     logger.info("Output directory: %s", output_dir.resolve())
 
-    download_classifier_dataset(args, logger)
 
     success = run_classifier_pipeline(args, logger)
 

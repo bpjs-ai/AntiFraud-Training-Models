@@ -25,8 +25,6 @@ from train_classifier.train_utils import (
     save_label_mapping,
     train_one_epoch,
 )
-import subprocess
-
 import warnings
 warnings.filterwarnings("ignore")
 UTC_PLUS_7 = timezone(timedelta(hours=7))
@@ -122,17 +120,6 @@ def main() -> None:
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
-
-    subprocess.run([
-        "python",
-        "train_classifier/ocr_paddle.py",
-        "--input_folder",
-        cfg.image_root_dir,
-        "--output_csv",
-        cfg.data_csv_path,
-        "--num_workers",
-        "50",
-    ])
 
     df, label_to_id = load_and_prepare_dataframe(
         data_csv_path=cfg.data_csv_path,
