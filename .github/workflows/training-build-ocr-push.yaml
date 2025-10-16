@@ -3,7 +3,7 @@ name: Training OCR Build and Push
 on:
   push:
     branches:
-      - ref-args3
+      - ref-args2
     paths-ignore:
       - 'docker-compose.*'
       - 'Dockerfile.ubuntu'
