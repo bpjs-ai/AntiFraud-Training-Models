@@ -19,7 +19,6 @@ from train_classifier.dataset import (
 )
 from train_classifier.config import TransferConfig
 from train_classifier.model import HybridModel
-import subprocess
 from train_classifier.train_utils import (
     build_optimizer,
     build_scheduler,
@@ -311,12 +310,6 @@ def main() -> None:
     else:
         print("[WARNING] Previous label map could not be loaded. The model will be fine-tuned only on the new dataset classes.")
 
-    subprocess.run([
-        "python", "train_classifier/ocr_paddle.py",
-        "--input_folder", defaults.image_root_dir,
-        "--output_csv", defaults.data_csv_path,
-        "--num_workers", "50"
-    ])
 
     df, _ = load_and_prepare_dataframe(
         data_csv_path=defaults.data_csv_path,
