@@ -436,6 +436,35 @@ def main() -> None:
     summary_metrics = best_metrics or last_metrics
     per_class_summary = summary_metrics.get("per_class", {})
     aggregate_metrics = {k: v for k, v in summary_metrics.items() if k != "per_class"}
+    
+    # Convert metrics to percentage format
+    def format_metric(value: Any) -> Any:
+        """Convert float metrics to percentage string format with 1 decimal place."""
+        if isinstance(value, float):
+            return f"{value * 100:.1f}%"
+        return value
+    
+    def format_metrics_dict(metrics: Dict[str, Any]) -> Dict[str, Any]:
+        """Recursively format all float values in a metrics dictionary to percentage."""
+        formatted = {}
+        for key, value in metrics.items():
+            if isinstance(value, dict):
+                formatted[key] = format_metrics_dict(value)
+            elif key in ("train_loss", "val_loss", "train_accuracy", "val_accuracy", 
+                         "precision", "recall", "f1", "f1_score"):
+                formatted[key] = format_metric(value)
+            else:
+                formatted[key] = value
+        return formatted
+    
+    # Format aggregate metrics
+    formatted_aggregate_metrics = format_metrics_dict(aggregate_metrics)
+    
+    # Format per-class metrics
+    formatted_per_class_summary = {}
+    for class_name, class_metrics in per_class_summary.items():
+        formatted_per_class_summary[class_name] = format_metrics_dict(class_metrics)
+    
     hyperparameters = {
         "epochs": args.epochs,
         "batch_size": args.batch_size,
@@ -448,21 +477,18 @@ def main() -> None:
     }
     trained_state_dict_key = f"outputs_training/transfer/state_dicts/{best_state_dict_path.name}"
     trained_state_dict_source = trained_state_dict_key
-    if trained_state_dict_source and s3_handler and getattr(s3_handler, "bucket_name", None):
-        trained_state_dict_source = f"s3://{s3_handler.bucket_name}/{trained_state_dict_source.lstrip('/')}"
+    
     pretrained_state_dict_source = state_dict_s3_key
-    if pretrained_state_dict_source and not pretrained_state_dict_source.startswith("s3://"):
-        if s3_handler and getattr(s3_handler, "bucket_name", None):
-            s3_key = pretrained_state_dict_source.lstrip("/")
-            pretrained_state_dict_source = f"s3://{s3_handler.bucket_name}/{s3_key}"
+    if pretrained_state_dict_source and pretrained_state_dict_source.startswith("s3://"):
+        pretrained_state_dict_source = "/".join(pretrained_state_dict_source.split("/")[3:])
     training_summary = {
         "mode": "transfer",
         "timestamp": now_in_gmt7().isoformat(),
         "num_classes": num_classes,
         "added_classes": added_classes,
         "hyperparameters": hyperparameters,
-        "metrics": aggregate_metrics,
-        "per_class_metrics": per_class_summary,
+        "metrics": formatted_aggregate_metrics,
+        "per_class_metrics": formatted_per_class_summary,
         "pretrained_state_dict": pretrained_state_dict_source or state_dict_path,
         "trained_model_path": trained_state_dict_source,
     }
@@ -529,7 +555,16 @@ def main() -> None:
         print(f"[INFO] Uploaded Report to {result_key}")
         
         print(f"[INFO] Pretrained State Dict used: {state_dict_s3_key}")
-        print(f"[INFO] Models Accuracy: {summary_metrics.get('val_accuracy', 'N/A'):.4f}")
+        
+        # Extract numeric value for display
+        val_acc = summary_metrics.get('val_accuracy', 'N/A')
+        if isinstance(val_acc, str) and '%' in val_acc:
+            val_acc_display = val_acc
+        elif isinstance(val_acc, float):
+            val_acc_display = f"{val_acc * 100:.1f}%"
+        else:
+            val_acc_display = str(val_acc)
+        print(f"[INFO] Models Accuracy: {val_acc_display}")
 
 if __name__ == "__main__":
     main()
