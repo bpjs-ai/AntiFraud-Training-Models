@@ -225,9 +225,10 @@ def main() -> None:
     aggregate_metrics = {k: v for k, v in summary_metrics.items() if k != "per_class"}
     
     # Convert metrics to percentage format 
-    def format_metric(value):
-        """Convert float metrics to percentage string format with 1 decimal place."""
+    def format_metric(value, is_loss=False):
         if isinstance(value, float):
+            if is_loss:
+                return f"{value:.3f}"
             return f"{value * 100:.1f}%"
         return value
     
@@ -237,9 +238,11 @@ def main() -> None:
         for key, value in metrics.items():
             if isinstance(value, dict):
                 formatted[key] = format_metrics_dict(value)
-            elif key in ("train_loss", "val_loss", "train_accuracy", "val_accuracy", 
+            elif key in ("train_loss", "val_loss"):
+                formatted[key] = format_metric(value, is_loss=True)
+            elif key in ("train_accuracy", "val_accuracy", 
                          "precision", "recall", "f1", "f1_score"):
-                formatted[key] = format_metric(value)
+                formatted[key] = format_metric(value, is_loss=False)
             else:
                 formatted[key] = value
         return formatted
