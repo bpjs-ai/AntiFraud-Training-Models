@@ -1,7 +1,8 @@
 import os
 from sqlalchemy import create_engine, text
 
-def update_training_and_classifier(training_id: str, paths_model: str, path_label: str, acc: str):
+def update_training_and_classifier(training_id: str, paths_model: str, path_label: str, acc: str, 
+                                   hyperparams:str, per_class:str):
     """
     Fungsi ini mengupdate status training dan melakukan upsert pada tabel classifier_collection
     dengan menggunakan SQLAlchemy untuk menghindari SQL injection dan credential leak.
@@ -52,7 +53,7 @@ def update_training_and_classifier(training_id: str, paths_model: str, path_labe
             {
                 "training_id": training_id,
                 "paths_model": paths_model,
-                "acc": acc,
+                "acc": acc+hyperparams+per_class,
                 "path_label": path_label
             }
         )
