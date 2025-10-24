@@ -67,5 +67,7 @@ if __name__ == "__main__":
     paths_model = sys.argv[2]
     path_label = sys.argv[3]
     acc = sys.argv[4]
+    hyperparams = sys.argv[5]
+    per_class = sys.argv[6]
 
-    update_training_and_classifier(training_id, paths_model, path_label, acc)
+    update_training_and_classifier(training_id, paths_model, path_label, acc, hyperparams, per_class)
