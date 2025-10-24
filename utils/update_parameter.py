@@ -53,7 +53,7 @@ def update_training_and_classifier(training_id: str, paths_model: str, path_labe
             {
                 "training_id": training_id,
                 "paths_model": paths_model,
-                "acc": acc+hyperparams+per_class,
+                "acc": '{ "accuracy": '+acc+', "hyperparameters": '+hyperparams+', "per_class_metrics": '+per_class+'}',
                 "path_label": path_label
             }
         )
