@@ -1,4 +1,5 @@
 import os
+import json
 from sqlalchemy import create_engine, text
 
 def update_training_and_classifier(training_id: str, paths_model: str, path_label: str, acc: str, 
@@ -12,6 +13,11 @@ def update_training_and_classifier(training_id: str, paths_model: str, path_labe
     DB_PASSWORD = os.getenv("DB_PASSWORD")      # misal: 'MySecurePassword!'
     DB_SERVER = os.getenv("DB_SERVER_LOCAL")          # misal: '10.20.30.40'
     DB_NAME = os.getenv("DB_NAME_LOCAL", "dbVedika_VerifAI")  # default nama DB
+    result = {
+    "accuracy": acc,
+    "hyperparameters": hyperparams,
+    "per_class_metrics": per_class
+}
 
     if not all([DB_USER, DB_PASSWORD, DB_SERVER]):
         raise ValueError(" Environment variable DB_USER, DB_PASSWORD, atau DB_SERVER belum diset!")
@@ -53,7 +59,7 @@ def update_training_and_classifier(training_id: str, paths_model: str, path_labe
             {
                 "training_id": training_id,
                 "paths_model": paths_model,
-                "acc": '{ "accuracy": '+acc+', "hyperparameters": '+hyperparams+', "per_class_metrics": '+per_class+'}',
+                "acc": json.dumps(result, indent=2),
                 "path_label": path_label
             }
         )
