@@ -40,7 +40,7 @@ def update_training_and_classifier(training_id: str, paths_model: str, path_labe
                 SET training_status = 'SUCCES'
                 WHERE id = :training_id
             """),
-            {"training_id": training_id}
+            {"training_id": str(training_id)}
         )
 
         # Upsert classifier_collection
