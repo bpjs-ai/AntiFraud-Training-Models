@@ -568,6 +568,8 @@ def main() -> None:
         else:
             val_acc_display = str(val_acc)
         print(f"[INFO] Models Accuracy: {val_acc_display}")
+        print(f"[INFO] Hyperparameters: {hyperparameters}")
+        print(f"[INFO] Per Class Accuracy: {formatted_per_class_summary}")
 
 if __name__ == "__main__":
     main()
