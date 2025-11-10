@@ -2,6 +2,47 @@
 
 This project exposes three Python entry points for training the BPJS hybrid OCR classifier. Use this guide to decide which script to run, understand their arguments, and wire them into Docker or Airflow.
 
+## System Architecture
+
+The following diagram shows the pipeline flow of the AntiFraud Training Models system:
+
+```mermaid
+flowchart TD
+    A[Start - main.py] --> B{Select Mode}
+    B -->|Full Training| C[train_classifier/main_classifier.py]
+    B -->|Transfer Learning| D[train_classifier/main_classifier_TL.py]
+    
+    C --> E[Load Dataset CSV & Images]
+    C --> F[Load Pretrained BERT & ResNet]
+    C --> G[Build Hybrid Model]
+    E --> H[Preprocess Data & Create DataLoader]
+    F --> G
+    H --> I[Train Model]
+    G --> I
+    I --> J{Early Stopping?}
+    J -->|No| I
+    J -->|Yes| K[Save Best Model & Metrics]
+    
+    D --> L[Download Pretrained Artifacts from S3]
+    D --> M[Load New Dataset]
+    L --> N[Load Previous Label Mapping]
+    M --> O[Merge Label Mappings]
+    N --> O
+    O --> P[Load Pretrained Weights to Model]
+    P --> Q[Prepare DataLoaders]
+    Q --> R[Train with Transfer Learning]
+    R --> S{Early Stopping?}
+    S -->|No| R
+    S -->|Yes| T[Save Transfer Learning Model & Metrics]
+    
+    K --> |Full Model| U[Export ONNX Full Model]
+    T --> |Full Model| U
+    K --> |Statedict| V[Upload Artifacts to S3]
+    T --> |Statedict| V
+    U --> |Full Model ONNX| V
+    V --> W[Training Complete]
+```
+
 ## Entry Points Overview
 
 - `main.py` - high-level orchestrator that can run either training mode and optionally sync data from S3 before launching a run.
