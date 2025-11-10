@@ -25,7 +25,7 @@ COPY requirements_ocr.txt ./requirements_ocr.txt
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements_ocr.txt
 
-COPY . .
+COPY classifier/. .
 
 COPY run_pipeline.sh /app/run_pipeline.sh
 RUN chmod +x /app/run_pipeline.sh

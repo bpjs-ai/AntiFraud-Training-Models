@@ -29,7 +29,7 @@ RUN python -m pip install --upgrade pip setuptools wheel && \
 # ---- Runtime (GPU) ----
 FROM base-gpu AS runtime-gpu
 WORKDIR /app
-COPY . .
+COPY classifier/. .
 
 COPY run_pipeline.sh /app/run_pipeline.sh
 RUN chmod +x /app/run_pipeline.sh
