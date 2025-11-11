@@ -9,10 +9,10 @@ def update_training_and_classifier(training_id: str, paths_model: str, path_labe
     dengan menggunakan SQLAlchemy untuk menghindari SQL injection dan credential leak.
     """
     # === 1️ Ambil kredensial dari environment variable ===
-    DB_USER = os.getenv("DB_USERNAME_LOCAL")              # misal: 'sa'
-    DB_PASSWORD = os.getenv("DB_PASSWORD")      # misal: 'MySecurePassword!'
-    DB_SERVER = os.getenv("DB_SERVER_LOCAL")          # misal: '10.20.30.40'
-    DB_NAME = os.getenv("DB_NAME_LOCAL", "dbVedika_VerifAI")  # default nama DB
+    DB_USER = os.getenv("DB_USERNAME_LOCAL")              
+    DB_PASSWORD = os.getenv("DB_PASSWORD")   
+    DB_SERVER = os.getenv("DB_SERVER_LOCAL")          
+    DB_NAME = os.getenv("DB_NAME_RESULT", "dbAntiFraud")  
     result = {
     "accuracy": acc,
     "hyperparameters": hyperparams,
