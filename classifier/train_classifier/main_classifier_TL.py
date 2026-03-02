@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn as nn
-from sklearn.utils.class_weight import compute_class_weight
+from sklearn.utils.class_weight import compute_class_weigh
 
 from train_classifier.dataset import (
     build_dataloaders,
@@ -27,6 +27,7 @@ from train_classifier.train_utils import (
     train_one_epoch,
 )
 from utils.s3_utils import S3Handler
+from utils.opensearch_index import insert_index, list_files_recursive
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -549,14 +550,15 @@ def main() -> None:
         upload_handler.upload_file(str(label_map_path), label_map_key)
         upload_handler.upload_file(str(result_path), result_key)
         upload_handler.upload_file(str(best_state_dict_path), state_dict_key)
-
+        
+        # Insert index for uploaded files
+        insert_index([onnx_key, label_map_key, result_key, state_dict_key])
         report_filename = os.path.basename(result_key)
-
+        
         # print(f"✅ ONNX model saved at {onnx_path}")
         print(f"[INFO] Uploaded ONNX model to {onnx_key}")
         print(f"[INFO] Uploaded Labelmap to {label_map_key}")
         print(f"[INFO] Uploaded Report to {result_key}")
-        
         print(f"[INFO] Pretrained State Dict used: {state_dict_s3_key}")
         
         # Extract numeric value for display

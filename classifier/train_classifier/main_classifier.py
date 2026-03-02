@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 
 from utils.s3_utils import S3Handler
+from utils.opensearch_index import insert_index
 from train_classifier.config import TrainConfig
 from train_classifier.dataset import (
     build_dataloaders,
@@ -336,6 +337,8 @@ def main() -> None:
     s3_handler.upload_file(cfg.label_map_path, label_map_key)
     s3_handler.upload_file(cfg.result_path, result_key)
     s3_handler.upload_file(cfg.best_state_dict_path, trained_state_dict_key)
+    
+    insert_index([onnx_key, label_map_key, result_key, trained_state_dict_key])
 
     report_filename = os.path.basename(result_key)
 

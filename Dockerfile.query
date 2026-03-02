@@ -26,6 +26,6 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 # Copy seluruh kode aplikasi ke container
 # Copy file util tunggal
-COPY utils/update_parameter.py ./utils/update_parameter.py
+COPY classifier/utils/update_parameter.py ./utils/update_parameter.py
 
 ENTRYPOINT ["/bin/bash", "-lc"]
