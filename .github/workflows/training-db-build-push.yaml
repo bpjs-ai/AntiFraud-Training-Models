@@ -3,7 +3,7 @@ name: Training DB Build and Push
 on:
   push:
     branches:
-      - ref-args2
+      - master
     paths-ignore:
       - 'docker-compose.*'
       - 'Dockerfile.ubuntu'
